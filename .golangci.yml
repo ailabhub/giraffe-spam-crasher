@@ -1,0 +1,73 @@
+# .golangci.yml
+
+run:
+  timeout: 5m
+  tests: true
+  # Include test files for linting
+  skip-dirs:
+    - vendor
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - typecheck
+    - unused
+    - gofmt
+    - goimports
+    - revive
+    - misspell
+    - gosec
+    - unconvert
+    - gocyclo
+    - dupl
+    - goconst
+    - prealloc
+    - exportloopref
+    #- gocognit
+
+linters-settings:
+  gocyclo:
+    min-complexity: 15
+  dupl:
+    threshold: 100
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+  gocognit:
+    min-complexity: 20
+  gosec:
+    excludes:
+      - G404 # Insecure random number source (rand)
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
+        - dupl
+
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+output:
+  format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+
+severity:
+  default-severity: error
+  rules:
+    - linters:
+        - revive
+      severity: warning
+
+# Allow the use of the go-redis/redis package
+depguard:
+  list-type: blacklist
+  include-go-root: false
+  allow:
+    - "github.com/go-redis/redis"

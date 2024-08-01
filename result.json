@@ -1,0 +1,51 @@
+{
+ "name": "ctodailychat",
+ "type": "public_supergroup",
+ "id": 1098030726,
+ "messages": [
+  {
+   "id": 1,
+   "type": "service",
+   "date": "2017-03-30T22:35:40",
+   "date_unixtime": "1490902540",
+   "actor": "ctodailychat",
+   "actor_id": "channel1098030726",
+   "action": "migrate_from_group",
+   "title": "ctodailychat",
+   "text": "",
+   "text_entities": []
+  },
+  {
+   "id": 406242,
+   "type": "message",
+   "date": "2024-07-20T20:16:45",
+   "date_unixtime": "1721495805",
+   "edited": "2024-07-20T20:24:22",
+   "edited_unixtime": "1721496262",
+   "from": "meh",
+   "from_id": "user253872226",
+   "text": [
+    "наконец нормальный хостинг\n",
+    {
+     "type": "link",
+     "text": "https://nouptime.com"
+    },
+    ""
+   ],
+   "text_entities": [
+    {
+     "type": "plain",
+     "text": "наконец нормальный хостинг\n"
+    },
+    {
+     "type": "link",
+     "text": "https://nouptime.com"
+    },
+    {
+     "type": "plain",
+     "text": ""
+    }
+   ]
+  }
+ ]
+}
