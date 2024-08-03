@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -70,15 +71,8 @@ func main() { //nolint:gocyclo,gocognit
 
 	logger.Info("Connected to Redis", "url", redisURL)
 
-	// Check if Redis is empty
-	keysCount, err := rdb.DBSize(ctx).Result()
-	if err != nil {
-		logger.Error("Failed to get Redis database size", "error", err)
-		os.Exit(1)
-	}
-
 	// Load history if the flag is not empty and Redis is empty
-	if *historyFile != "" && keysCount == 0 {
+	if *historyFile != "" {
 		err := history.ProcessFile(*historyFile, rdb)
 		if err != nil {
 			logger.Error("Failed to load history", "error", err)
@@ -86,11 +80,21 @@ func main() { //nolint:gocyclo,gocognit
 			// os.Exit(1)
 		} else {
 			logger.Info("History loaded", "file", *historyFile)
+			logger.Info("Exiting, run without the --history flag to continue")
+			os.Exit(0)
 		}
-	} else if keysCount > 0 {
-		logger.Info("Redis is not empty. Skipping history load.")
+	} else {
+		// TODO: check by channel's ids for multiple channels
+		// Check if Redis is empty
+		keysCount, err := rdb.DBSize(ctx).Result()
+		if err != nil {
+			logger.Error("Failed to get Redis database size", "error", err)
+			os.Exit(1)
+		}
+		if keysCount == 0 {
+			logger.Warn("REDIS DATABASE IS EMPTY, STARTING WITH AN EMPTY HISTORY!")
+		}
 	}
-
 	// Read API key from environment variable
 	var apiKey string
 	var provider ai.Provider
@@ -164,11 +168,23 @@ func (i *intSliceFlag) Set(value string) error {
 	if value == "" {
 		return nil
 	}
-	var intValue int64
-	_, err := fmt.Sscanf(value, "%d", &intValue)
-	if err != nil {
-		return err
+
+	// Split the input string by commas
+	values := strings.Split(value, ",")
+
+	for _, v := range values {
+		// Trim any whitespace
+		v = strings.TrimSpace(v)
+
+		// Parse the integer
+		intValue, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid integer value: %s", v)
+		}
+
+		// Append the parsed integer to the slice
+		*i = append(*i, intValue)
 	}
-	*i = append(*i, intValue)
+
 	return nil
 }

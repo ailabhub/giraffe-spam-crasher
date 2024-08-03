@@ -60,6 +60,8 @@ telegram-bot
 # Log files
 *.log
 
+*.json
+
 .env
 
 redis_data

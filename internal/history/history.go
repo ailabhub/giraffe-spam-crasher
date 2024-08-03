@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/redis/go-redis/v9"
@@ -50,16 +51,22 @@ func ProcessFile(filePath string, redisClient *redis.Client) error {
 			userCounts[userID]++
 		}
 	}
+	chatID := ""
+	switch telegramData.Type {
+	case "public_supergroup", "private_supergroup", "channel":
+		chatID = "-100" + strconv.FormatInt(telegramData.ID, 10)
+	default:
+		return fmt.Errorf("wrong chat type: %s", telegramData.Type)
+	}
 
 	// Store counts in Redis
 	for userID, count := range userCounts {
-		key := fmt.Sprintf("%s:%d", userID, telegramData.ID)
-		err := redisClient.Set(context.TODO(), key, count, 0).Err()
+		key := fmt.Sprintf("%s:%s", userID, chatID)
+		err = redisClient.Set(context.TODO(), key, count, 0).Err()
 		if err != nil {
-			return fmt.Errorf("error storing count for user %s in channel %d: %v", userID, telegramData.ID, err)
+			return fmt.Errorf("error storing count for user %s in channel %s: %v", userID, chatID, err)
 		}
 	}
-
 	return nil
 }
 
