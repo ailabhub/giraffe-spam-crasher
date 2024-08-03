@@ -21,10 +21,11 @@ services:
       "-prompt=${PROMPT:-/root/prompt.txt}",
       "-model=${MODEL:-claude-3-5-sonnet-20240620}",
       "-provider=${PROVIDER:-anthropic}",
-      "-spam-threshold=${SPAM_THRESHOLD:-0.6}",
+      "-spam-threshold=${SPAM_THRESHOLD}", #0.5
       "-new-user-threshold=${NEW_USER_THRESHOLD:-1}",
-      "-whitelist-channels=${WHITELIST_CHANNELS:-}", # comma separated, for example: "-1001098030726" (CTO daily chat)
-      "-log-level=${LOG_LEVEL:-info}"
+      "-whitelist-channels=${WHITELIST_CHANNELS}", # comma separated, for example: "-1001098030726" (CTO daily chat)
+      "-log-level=${LOG_LEVEL:-info}",
+      "-log-channels=${LOG_CHANNELS}" # comma-separated list of working chat ID and log channel ID pairs, for example: "-1001098030726:-1001089898989,-1001098030727:-1001089898990" (first pair: CTO daily chat and its log channel, second pair: another chat and its log channel)
     ]
 
   redis:
