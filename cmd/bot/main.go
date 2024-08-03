@@ -198,7 +198,7 @@ func (i *intSliceFlag) Set(value string) error {
 type logChannelsFlag map[int64]int64
 
 func (l *logChannelsFlag) String() string {
-	var pairs []string
+	pairs := make([]string, len(*l))
 	for workingChatID, logChannelID := range *l {
 		pairs = append(pairs, fmt.Sprintf("%d:%d", workingChatID, logChannelID))
 	}
