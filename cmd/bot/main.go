@@ -29,6 +29,10 @@ func main() { //nolint:gocyclo,gocognit
 	newUserThreshold := flag.Int("new-user-threshold", 1, "Threshold for classifying user as new")
 	var whitelistChannels intSliceFlag
 	flag.Var(&whitelistChannels, "whitelist-channels", "Comma-separated list of whitelisted channel IDs")
+
+	var logChannels logChannelsFlag
+	flag.Var(&logChannels, "log-channels", "Comma-separated list of working chat ID and log channel ID pairs in the format 'workingChatID1:logChannelID1,workingChatID2:logChannelID2'")
+
 	flag.Parse()
 
 	var logLevelValue slog.Level
@@ -139,6 +143,7 @@ func main() { //nolint:gocyclo,gocognit
 		Threshold:         *threshold,
 		NewUserThreshold:  *newUserThreshold,
 		WhitelistChannels: whitelistChannels,
+		LogChannels:       logChannels,
 	})
 
 	if err != nil {
@@ -186,5 +191,40 @@ func (i *intSliceFlag) Set(value string) error {
 		*i = append(*i, intValue)
 	}
 
+	return nil
+}
+
+// logChannelsFlag is a custom flag type for a map of working chat IDs to log channel IDs
+type logChannelsFlag map[int64]int64
+
+func (l *logChannelsFlag) String() string {
+	pairs := make([]string, len(*l))
+	for workingChatID, logChannelID := range *l {
+		pairs = append(pairs, fmt.Sprintf("%d:%d", workingChatID, logChannelID))
+	}
+	return strings.Join(pairs, ",")
+}
+
+func (l *logChannelsFlag) Set(value string) error {
+	pairs := strings.Split(value, ",")
+	*l = make(map[int64]int64)
+	for _, pair := range pairs {
+		parts := strings.Split(strings.TrimSpace(pair), ":")
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid format for log channel pair, expected 'workingChatID:logChannelID'")
+		}
+
+		workingChatID, err := strconv.ParseInt(parts[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid working chat ID: %v", err)
+		}
+
+		logChannelID, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid log channel ID: %v", err)
+		}
+
+		(*l)[workingChatID] = logChannelID
+	}
 	return nil
 }
