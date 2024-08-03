@@ -35,7 +35,7 @@ services:
     volumes:
       - ./redis_data:/data
       - ./redis.conf:/usr/local/etc/redis/redis.conf
-    command: redis-server /usr/local/etc/redis/redis.conf --loglevel warning
+    command: redis-server /usr/local/etc/redis/redis.conf --loglevel warning --appendonly yes
     restart: unless-stopped
     networks:
       - app-network
