@@ -120,6 +120,20 @@ func main() { //nolint:gocyclo,gocognit
 		}
 		provider = ai.NewAnthropicProvider(apiKey, *model, rateLimit)
 		logger.Info("Using Anthropic API", "model", *model)
+	case "gemini":
+		apiKey := os.Getenv("GEMINI_API_KEY")
+		if apiKey == "" {
+			logger.Error("GEMINI_API_KEY environment variable is not set")
+			os.Exit(1)
+		}
+
+		geminiProvider, err := ai.NewGeminiProvider(apiKey, *model, rateLimit)
+		if err != nil {
+			logger.Error("Error creating Gemini provider", "error", err)
+			os.Exit(1)
+		}
+		provider = geminiProvider
+		logger.Info("Using Gemini API", "model", *model)
 	default:
 		fmt.Printf("Unsupported API provider: %s\n", *apiProvider)
 		os.Exit(1)
@@ -206,6 +220,9 @@ func (l *logChannelsFlag) String() string {
 }
 
 func (l *logChannelsFlag) Set(value string) error {
+	if value == "" {
+		return nil
+	}
 	pairs := strings.Split(value, ",")
 	*l = make(map[int64]int64)
 	for _, pair := range pairs {
