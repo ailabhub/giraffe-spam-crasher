@@ -169,39 +169,37 @@ func (b *Bot) Start() { //nolint:gocyclo,gocognit
 				continue
 			}
 
-			if isAdmin {
-				// Forward the message to the log channel
-				if logChannelID, exists := b.config.LogChannels[channelID]; exists {
-					forwardMsg := tgbotapi.NewForward(logChannelID, channelID, update.Message.MessageID)
-					_, err := b.api.Send(forwardMsg)
-					if err != nil {
-						b.logger.Error("Failed to forward spam message to log channel", "error", err, "messageID", update.Message.MessageID, "logChannelID", logChannelID)
-					} else {
-						b.logger.Info("Forwarded spam message to log channel", "messageID", update.Message.MessageID, "userID", uid, "channelID", channelID, "logChannelID", logChannelID, "spamScore", processed.SpamScore)
-					}
+			logMessage := fmt.Sprintf("🤡 Spam detected and deleted:\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f / %.2f", uid, channelID, processed.SpamScore, b.config.Threshold)
+			if !isAdmin {
+				logMessage = fmt.Sprintf("👻 Spam detected and logged:\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f / %.2f", uid, channelID, processed.SpamScore, b.config.Threshold)
+			}
 
-					// Send additional information to the log channel
-					logMessage := fmt.Sprintf("🤡 Spam detected and deleted:\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f / %.2f", uid, channelID, processed.SpamScore, b.config.Threshold)
-					logMsg := tgbotapi.NewMessage(logChannelID, logMessage)
-					_, err = b.api.Send(logMsg)
-					if err != nil {
-						b.logger.Error("Failed to send log message to log channel", "error", err, "logChannelID", logChannelID)
-					}
+			// Forward the message to the log channel
+			if logChannelID, exists := b.config.LogChannels[channelID]; exists {
+				forwardMsg := tgbotapi.NewForward(logChannelID, channelID, update.Message.MessageID)
+				_, err := b.api.Send(forwardMsg)
+				if err != nil {
+					b.logger.Error("Failed to forward spam message to log channel", "error", err, "messageID", update.Message.MessageID, "logChannelID", logChannelID)
+				} else {
+					b.logger.Info("Forwarded spam message to log channel", "messageID", update.Message.MessageID, "userID", uid, "channelID", channelID, "logChannelID", logChannelID, "spamScore", processed.SpamScore)
 				}
 
+				// Send additional information to the log channel
+
+				logMsg := tgbotapi.NewMessage(logChannelID, logMessage)
+				_, err = b.api.Send(logMsg)
+				if err != nil {
+					b.logger.Error("Failed to send log message to log channel", "error", err, "logChannelID", logChannelID)
+				}
+			}
+
+			if isAdmin {
 				deleteMsg := tgbotapi.NewDeleteMessage(channelID, update.Message.MessageID)
 				_, err := b.api.Request(deleteMsg)
 				if err != nil {
 					b.logger.Error("Failed to delete spam message", "error", err, "messageID", update.Message.MessageID)
 				} else {
 					b.logger.Info("Deleted spam message", "messageID", update.Message.MessageID, "userID", uid, "channelID", channelID, "spamScore", processed.SpamScore, "reasoning", processed.Reasoning)
-				}
-			} else {
-				replyMsg := tgbotapi.NewMessage(channelID, fmt.Sprintf("This message was classified as spam.\nWith score: %.2f / %.2f \n", processed.SpamScore, b.config.Threshold))
-				replyMsg.ReplyToMessageID = update.Message.MessageID
-				_, err := b.api.Send(replyMsg)
-				if err != nil {
-					b.logger.Error("Failed to send spam reply", "error", err)
 				}
 			}
 		}
