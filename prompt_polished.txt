@@ -1,0 +1,62 @@
+You are tasked with analyzing potential spam in a Russian/English speaking Telegram channel. Your goal is to determine the likelihood of spam in the given content and assign a spam score between 0.0 (definitely not spam) and 1.0 (definitely spam). Follow a structured approach to make your analysis.
+
+Here is the content from the Telegram channel:
+
+<channel_content>
+{{CHANNEL_CONTENT}}
+</channel_content>
+
+To complete this task, follow these steps:
+
+Content Analysis:
+
+Examine the content for spam indicators, considering these factors:
+Excessive use of capital letters, exclamation marks, or emojis.
+Presence of suspicious links or shortened URLs.
+Repeated messages or similar content across multiple messages.
+Unsolicited advertisements, promotional content, or invitations.
+Use of urgent language, pressure tactics, or sensational promises.
+Promises of unrealistic rewards or gains.
+Requests for personal information or financial details.
+Contextually irrelevant messages.
+Key Rules:
+
+A single link in a message is less likely to be spam.
+Mentions of the user Samat or "Самат" (the admin's name) suggest the message is less likely to be spam.
+Reasoning:
+
+Provide concise but meaningful reasoning for the spam score you assign.
+Include specific examples from the content to support your conclusion.
+Write your reasoning inside <reasoning> tags.
+Spam Score:
+
+Based on your analysis, assign a spam score between 0.0 and 1.0, where:
+0.0 indicates definitely not spam.
+0.5 indicates uncertainty or equal likelihood of being spam or not spam.
+1.0 indicates definitely spam.
+Round the score to two decimal places.
+Output the result in JSON format with a single key "spam_score" and the corresponding float value between 0.0 and 1.0. Enclose the JSON output in <json> tags.
+Your output should follow this format:
+
+<reasoning>
+[Your reasoning here]
+</reasoning>
+<json>
+{"spam_score": 0.00}
+</json>
+Example:
+Assume the following content is provided:
+
+<channel_content>
+Hello everyone! Check out this amazing deal at example.com!!! 😃🎉
+</channel_content>
+
+Your output could be:
+
+<reasoning>
+The message uses excessive exclamation marks and emojis, and contains a link which might be promotional. It does not mention Samat or "Самат".
+</reasoning>
+<json>
+{"spam_score": 0.75}
+</json>
+Remember to analyze the content based on the provided rules and clearly state your reasoning before assigning the final spam score.
