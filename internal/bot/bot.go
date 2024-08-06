@@ -131,9 +131,9 @@ func (b *Bot) Start() { //nolint:gocyclo,gocognit
 			}
 
 			// Check for spam
-			processed, err := ai.ProcessRecord(update.Message.Text, b.config.Prompt, b.aiprovider)
+			processed, err := b.checkForSpamWithRetry(update.Message.Text, 3, 100*time.Millisecond)
 			if err != nil {
-				b.logger.Error("Error checking for spam", "error", err)
+				b.logger.Error("Error checking for spam after retries", "error", err)
 				continue
 			}
 
@@ -283,4 +283,18 @@ func (b *Bot) clearAdminCache() {
 func (b *Bot) Stop() {
 	close(b.stopChan)
 	b.redis.Close()
+}
+
+func (b *Bot) checkForSpamWithRetry(text string, maxRetries int, retryDelay time.Duration) (*ai.Result, error) {
+	var lastErr error
+	for i := 0; i < maxRetries; i++ {
+		processed, err := ai.ProcessRecord(text, b.config.Prompt, b.aiprovider)
+		if err == nil {
+			return &processed, nil
+		}
+		lastErr = err
+		b.logger.Warn("Spam check failed, retrying", "attempt", i+1, "error", err)
+		time.Sleep(retryDelay)
+	}
+	return nil, fmt.Errorf("failed to check for spam after %d attempts: %w", maxRetries, lastErr)
 }
