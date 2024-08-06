@@ -67,6 +67,8 @@ func ProcessFile(filePath string, redisClient *redis.Client) error {
 			return fmt.Errorf("error storing count for user %s in channel %s: %v", userID, chatID, err)
 		}
 	}
+
+	fmt.Printf("Processed %d messages in channel %s\n", len(telegramData.Messages), chatID)
 	return nil
 }
 

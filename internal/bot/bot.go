@@ -21,7 +21,7 @@ type Bot struct {
 	logger            *slog.Logger
 	aiprovider        ai.Provider
 	config            *Config
-	adminCache        map[int64]bool
+	adminCache        map[int64]AdminRights
 	cacheMutex        sync.RWMutex
 	stopChan          chan struct{}
 	whitelistChannels map[int64]bool
@@ -54,7 +54,7 @@ func New(logger *slog.Logger, rdb *redis.Client, aiprovider ai.Provider, config 
 		logger:            logger,
 		aiprovider:        aiprovider,
 		config:            config,
-		adminCache:        make(map[int64]bool),
+		adminCache:        make(map[int64]AdminRights),
 		stopChan:          make(chan struct{}),
 		whitelistChannels: whitelistMap,
 	}, nil
@@ -94,8 +94,8 @@ func (b *Bot) Start() { //nolint:gocyclo,gocognit
 		channelID := update.Message.Chat.ID
 
 		// Check admin rights for this chat
-		isAdmin := b.checkAdminRights(channelID, me.ID)
-		b.logger.Debug("Bot admin status for chat", "chatID", channelID, "isAdmin", isAdmin)
+		adminRights := b.checkAdminRights(channelID, me.ID)
+		b.logger.Debug("Bot admin status for chat", "chatID", channelID, "isAdmin", adminRights)
 
 		// Only process messages of type "message"
 		if update.Message.Text != "" {
@@ -169,9 +169,33 @@ func (b *Bot) Start() { //nolint:gocyclo,gocognit
 				continue
 			}
 
-			logMessage := fmt.Sprintf("🤡 Spam detected and deleted:\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f / %.2f", uid, channelID, processed.SpamScore, b.config.Threshold)
-			if !isAdmin {
-				logMessage = fmt.Sprintf("👻 Spam detected and logged:\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f / %.2f", uid, channelID, processed.SpamScore, b.config.Threshold)
+			action := "👻 Spam detected and logged"
+			if adminRights.CanDeleteMessages {
+				action = "🤡 Spam detected and deleted"
+				deleteMsg := tgbotapi.NewDeleteMessage(channelID, update.Message.MessageID)
+				_, err := b.api.Request(deleteMsg)
+				if err != nil {
+					b.logger.Error("Failed to delete spam message", "error", err, "messageID", update.Message.MessageID)
+				} else {
+					b.logger.Info("Deleted spam message", "messageID", update.Message.MessageID, "userID", uid, "channelID", channelID, "spamScore", processed.SpamScore, "reasoning", processed.Reasoning)
+				}
+			}
+
+			if adminRights.CanRestrictMembers {
+				action += "\n👩‍⚖️User banned"
+				restrictConfig := tgbotapi.RestrictChatMemberConfig{
+					ChatMemberConfig: tgbotapi.ChatMemberConfig{
+						ChatID: channelID,
+						UserID: int64(uid),
+					},
+				}
+				_, err := b.api.Request(restrictConfig)
+				if err != nil {
+					b.logger.Error("Failed to restrict user", "error", err, "userID", uid, "channelID", channelID)
+				} else {
+					b.logger.Info("Restricted user", "userID", uid, "channelID", channelID, "spamScore", processed.SpamScore)
+				}
+
 			}
 
 			// Forward the message to the log channel
@@ -185,37 +209,33 @@ func (b *Bot) Start() { //nolint:gocyclo,gocognit
 				}
 
 				// Send additional information to the log channel
-
+				logMessage := fmt.Sprintf(action+"\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f / %.2f", uid, channelID, processed.SpamScore, b.config.Threshold)
 				logMsg := tgbotapi.NewMessage(logChannelID, logMessage)
 				_, err = b.api.Send(logMsg)
 				if err != nil {
 					b.logger.Error("Failed to send log message to log channel", "error", err, "logChannelID", logChannelID)
 				}
 			}
-
-			if isAdmin {
-				deleteMsg := tgbotapi.NewDeleteMessage(channelID, update.Message.MessageID)
-				_, err := b.api.Request(deleteMsg)
-				if err != nil {
-					b.logger.Error("Failed to delete spam message", "error", err, "messageID", update.Message.MessageID)
-				} else {
-					b.logger.Info("Deleted spam message", "messageID", update.Message.MessageID, "userID", uid, "channelID", channelID, "spamScore", processed.SpamScore, "reasoning", processed.Reasoning)
-				}
-			}
 		}
 	}
 }
 
-func (b *Bot) checkAdminRights(chatID int64, botID int64) bool {
-	// First, check the cache
-	b.cacheMutex.RLock()
-	if isAdmin, exists := b.adminCache[chatID]; exists {
-		b.cacheMutex.RUnlock()
-		return isAdmin
-	}
-	b.cacheMutex.RUnlock()
+type AdminRights struct {
+	CanDeleteMessages  bool
+	CanRestrictMembers bool
+}
 
-	isAdmin := false
+func (b *Bot) checkAdminRights(chatID int64, botID int64) AdminRights {
+	b.cacheMutex.Lock()
+	defer b.cacheMutex.Unlock()
+
+	// Check if the admin rights are already in the cache
+	if adminRights, exists := b.adminCache[chatID]; exists {
+		return adminRights
+	}
+
+	// If not in cache, fetch the admin rights
+	adminRights := AdminRights{}
 
 	me, err := b.api.GetChatMember(tgbotapi.GetChatMemberConfig{
 		ChatConfigWithUser: tgbotapi.ChatConfigWithUser{
@@ -226,17 +246,16 @@ func (b *Bot) checkAdminRights(chatID int64, botID int64) bool {
 
 	if err != nil {
 		b.logger.Error("Error getting chat member", "error", err, "chatID", chatID, "botID", botID)
-		return false
+		return adminRights
 	}
 
-	isAdmin = me.CanDeleteMessages
+	adminRights.CanDeleteMessages = me.CanDeleteMessages
+	adminRights.CanRestrictMembers = me.CanRestrictMembers
 
 	// Update the cache
-	b.cacheMutex.Lock()
-	b.adminCache[chatID] = isAdmin
-	b.cacheMutex.Unlock()
+	b.adminCache[chatID] = adminRights
 
-	return isAdmin
+	return adminRights
 }
 
 func (b *Bot) clearAdminCacheRoutine() {
@@ -256,7 +275,7 @@ func (b *Bot) clearAdminCacheRoutine() {
 func (b *Bot) clearAdminCache() {
 	b.cacheMutex.Lock()
 	defer b.cacheMutex.Unlock()
-	b.adminCache = make(map[int64]bool)
+	b.adminCache = make(map[int64]AdminRights)
 }
 
 func (b *Bot) Stop() {
