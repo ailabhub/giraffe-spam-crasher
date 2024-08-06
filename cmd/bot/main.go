@@ -97,6 +97,8 @@ func main() { //nolint:gocyclo,gocognit
 		}
 		if keysCount == 0 {
 			logger.Warn("REDIS DATABASE IS EMPTY, STARTING WITH AN EMPTY HISTORY!")
+		} else {
+			logger.Info("Total history size", "count", keysCount)
 		}
 	}
 	// Read API key from environment variable
