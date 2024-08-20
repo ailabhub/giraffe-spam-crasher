@@ -134,6 +134,7 @@ func (b *Bot) Start() { //nolint:gocyclo,gocognit
 
 			// Hash the message
 			messageHash := b.hashMessage(update.Message.Text)
+			b.logger.Debug("Message hash", "userID", uid, "channelID", channelID, "hash", messageHash)
 
 			// Check if the message hash is in the Redis cache
 			isSpam, err := b.isSpamMessage(ctx, messageHash)
