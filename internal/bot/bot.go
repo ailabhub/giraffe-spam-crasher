@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ailabhub/giraffe-spam-crasher/internal/ai"
+	"github.com/ailabhub/giraffe-spam-crasher/internal/cache"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/redis/go-redis/v9"
 )
@@ -25,6 +26,7 @@ type Bot struct {
 	cacheMutex        sync.RWMutex
 	stopChan          chan struct{}
 	whitelistChannels map[int64]bool
+	spamCache         *cache.LRUCache
 }
 
 type Config struct {
@@ -57,6 +59,7 @@ func New(logger *slog.Logger, rdb *redis.Client, aiprovider ai.Provider, config 
 		adminCache:        make(map[int64]AdminRights),
 		stopChan:          make(chan struct{}),
 		whitelistChannels: whitelistMap,
+		spamCache:         cache.NewLRUCache(1000), // Adjust capacity as needed
 	}, nil
 }
 
@@ -130,6 +133,20 @@ func (b *Bot) Start() { //nolint:gocyclo,gocognit
 				continue
 			}
 
+			// Check if the message is in the spam cache
+			if b.spamCache.Contains(update.Message.Text) {
+				if adminRights.CanDeleteMessages {
+					deleteMsg := tgbotapi.NewDeleteMessage(channelID, update.Message.MessageID)
+					_, err := b.api.Request(deleteMsg)
+					if err != nil {
+						b.logger.Error("Failed to delete cached spam message", "error", err, "messageID", update.Message.MessageID)
+					} else {
+						b.logger.Info("Deleted cached spam message", "messageID", update.Message.MessageID, "userID", uid, "channelID", channelID)
+					}
+				}
+				continue
+			}
+
 			// Check for spam
 			processed, err := b.checkForSpamWithRetry(update.Message.Text, 3, 100*time.Millisecond)
 			if err != nil {
@@ -168,6 +185,9 @@ func (b *Bot) Start() { //nolint:gocyclo,gocognit
 				}
 				continue
 			}
+
+			// Add the message to the spam cache
+			b.spamCache.Put(update.Message.Text, true)
 
 			// Forward the message to the log channel
 			if logChannelID, exists := b.config.LogChannels[channelID]; exists {
