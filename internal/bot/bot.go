@@ -2,6 +2,8 @@ package bot
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
@@ -11,7 +13,6 @@ import (
 	"time"
 
 	"github.com/ailabhub/giraffe-spam-crasher/internal/ai"
-	"github.com/ailabhub/giraffe-spam-crasher/internal/cache"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/redis/go-redis/v9"
 )
@@ -26,7 +27,6 @@ type Bot struct {
 	cacheMutex        sync.RWMutex
 	stopChan          chan struct{}
 	whitelistChannels map[int64]bool
-	spamCache         *cache.LRUCache
 }
 
 type Config struct {
@@ -59,7 +59,6 @@ func New(logger *slog.Logger, rdb *redis.Client, aiprovider ai.Provider, config 
 		adminCache:        make(map[int64]AdminRights),
 		stopChan:          make(chan struct{}),
 		whitelistChannels: whitelistMap,
-		spamCache:         cache.NewLRUCache(1000), // Adjust capacity as needed
 	}, nil
 }
 
@@ -129,12 +128,22 @@ func (b *Bot) Start() { //nolint:gocyclo,gocognit
 			b.logger.Debug("User message count", "userID", uid, "channelID", channelID, "count", count)
 
 			if count >= b.config.NewUserThreshold {
-				b.logger.Debug("Skipping new user", "userID", uid, "channelID", channelID, "count", count)
+				b.logger.Debug("Skipping old user", "userID", uid, "channelID", channelID, "count", count)
 				continue
 			}
 
-			// Check if the message is in the spam cache
-			if b.spamCache.Contains(update.Message.Text) {
+			// Hash the message
+			messageHash := b.hashMessage(update.Message.Text)
+
+			// Check if the message hash is in the Redis cache
+			isSpam, err := b.isSpamMessage(ctx, messageHash)
+			if err != nil {
+				b.logger.Error("Error checking spam cache", "error", err)
+				continue
+			}
+
+			if isSpam {
+				// Immediately delete the message if it's in the spam cache
 				if adminRights.CanDeleteMessages {
 					deleteMsg := tgbotapi.NewDeleteMessage(channelID, update.Message.MessageID)
 					_, err := b.api.Request(deleteMsg)
@@ -186,58 +195,81 @@ func (b *Bot) Start() { //nolint:gocyclo,gocognit
 				continue
 			}
 
-			// Add the message to the spam cache
-			b.spamCache.Put(update.Message.Text, true)
-
-			// Forward the message to the log channel
-			if logChannelID, exists := b.config.LogChannels[channelID]; exists {
-				forwardMsg := tgbotapi.NewForward(logChannelID, channelID, update.Message.MessageID)
-				_, err := b.api.Send(forwardMsg)
-				if err != nil {
-					b.logger.Error("Failed to forward spam message to log channel", "error", err, "messageID", update.Message.MessageID, "logChannelID", logChannelID)
-				} else {
-					b.logger.Info("Forwarded spam message to log channel", "messageID", update.Message.MessageID, "userID", uid, "channelID", channelID, "logChannelID", logChannelID, "spamScore", processed.SpamScore)
-				}
+			// Add the message hash to the Redis spam cache
+			if err := b.addSpamMessage(ctx, messageHash); err != nil {
+				b.logger.Error("Failed to add spam message to cache", "error", err)
 			}
 
-			action := "👻 Spam detected and logged"
-			if adminRights.CanDeleteMessages {
-				action = "🤡 Spam detected and deleted"
-				deleteMsg := tgbotapi.NewDeleteMessage(channelID, update.Message.MessageID)
-				_, err := b.api.Request(deleteMsg)
-				if err != nil {
-					b.logger.Error("Failed to delete spam message", "error", err, "messageID", update.Message.MessageID)
-				} else {
-					b.logger.Info("Deleted spam message", "messageID", update.Message.MessageID, "userID", uid, "channelID", channelID, "spamScore", processed.SpamScore, "reasoning", processed.Reasoning)
-				}
-			}
+			b.handleSpamMessage(update.Message, channelID, int64(uid), adminRights)
+		}
+	}
+}
 
-			if adminRights.CanRestrictMembers {
-				action += "\n👩‍⚖️User banned"
-				restrictConfig := tgbotapi.RestrictChatMemberConfig{
-					ChatMemberConfig: tgbotapi.ChatMemberConfig{
-						ChatID: channelID,
-						UserID: int64(uid),
-					},
-				}
-				_, err := b.api.Request(restrictConfig)
-				if err != nil {
-					b.logger.Error("Failed to restrict user", "error", err, "userID", uid, "channelID", channelID)
-				} else {
-					b.logger.Info("Restricted user", "userID", uid, "channelID", channelID, "spamScore", processed.SpamScore)
-				}
+func (b *Bot) hashMessage(message string) string {
+	hash := sha256.Sum256([]byte(message))
+	return hex.EncodeToString(hash[:])
+}
 
-			}
+func (b *Bot) isSpamMessage(ctx context.Context, hash string) (bool, error) {
+	exists, err := b.redis.Exists(ctx, "spam:"+hash).Result()
+	if err != nil {
+		return false, err
+	}
+	return exists == 1, nil
+}
 
-			if logChannelID, exists := b.config.LogChannels[channelID]; exists {
-				// Send additional information to the log channel
-				logMessage := fmt.Sprintf(action+"\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f / %.2f", uid, channelID, processed.SpamScore, b.config.Threshold)
-				logMsg := tgbotapi.NewMessage(logChannelID, logMessage)
-				_, err = b.api.Send(logMsg)
-				if err != nil {
-					b.logger.Error("Failed to send log message to log channel", "error", err, "logChannelID", logChannelID)
-				}
-			}
+func (b *Bot) addSpamMessage(ctx context.Context, hash string) error {
+	// Store the hash with an expiration time (e.g., 24 hours)
+	return b.redis.Set(ctx, "spam:"+hash, 1, 24*7*time.Hour).Err()
+}
+
+func (b *Bot) handleSpamMessage(message *tgbotapi.Message, channelID, userID int64, adminRights AdminRights) {
+	// Forward the message to the log channel
+	if logChannelID, exists := b.config.LogChannels[channelID]; exists {
+		forwardMsg := tgbotapi.NewForward(logChannelID, channelID, message.MessageID)
+		_, err := b.api.Send(forwardMsg)
+		if err != nil {
+			b.logger.Error("Failed to forward spam message to log channel", "error", err, "messageID", message.MessageID, "logChannelID", logChannelID)
+		} else {
+			b.logger.Info("Forwarded spam message to log channel", "messageID", message.MessageID, "userID", userID, "channelID", channelID, "logChannelID", logChannelID)
+		}
+	}
+
+	action := "👻 Spam detected and logged"
+	if adminRights.CanDeleteMessages {
+		action = "🤡 Spam detected and deleted"
+		deleteMsg := tgbotapi.NewDeleteMessage(channelID, message.MessageID)
+		_, err := b.api.Request(deleteMsg)
+		if err != nil {
+			b.logger.Error("Failed to delete spam message", "error", err, "messageID", message.MessageID)
+		} else {
+			b.logger.Info("Deleted spam message", "messageID", message.MessageID, "userID", userID, "channelID", channelID)
+		}
+	}
+
+	if adminRights.CanRestrictMembers {
+		action += "\n👩‍⚖️User banned"
+		restrictConfig := tgbotapi.RestrictChatMemberConfig{
+			ChatMemberConfig: tgbotapi.ChatMemberConfig{
+				ChatID: channelID,
+				UserID: userID,
+			},
+		}
+		_, err := b.api.Request(restrictConfig)
+		if err != nil {
+			b.logger.Error("Failed to restrict user", "error", err, "userID", userID, "channelID", channelID)
+		} else {
+			b.logger.Info("Restricted user", "userID", userID, "channelID", channelID)
+		}
+	}
+
+	if logChannelID, exists := b.config.LogChannels[channelID]; exists {
+		// Send additional information to the log channel
+		logMessage := fmt.Sprintf(action+"\nUser ID: %d\nChannel ID: %d", userID, channelID)
+		logMsg := tgbotapi.NewMessage(logChannelID, logMessage)
+		_, err := b.api.Send(logMsg)
+		if err != nil {
+			b.logger.Error("Failed to send log message to log channel", "error", err, "logChannelID", logChannelID)
 		}
 	}
 }
