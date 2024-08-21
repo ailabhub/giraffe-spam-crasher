@@ -125,10 +125,10 @@ func (b *Bot) Start() { //nolint:gocyclo,gocognit
 				b.logger.Error("Error retrieving count from Redis", "error", err)
 				continue
 			}
-			b.logger.Debug("User message count", "userID", uid, "channelID", channelID, "count", count)
+			// b.logger.Debug("User message count", "userID", uid, "channelID", channelID, "count", count)
 
 			if count >= b.config.NewUserThreshold {
-				b.logger.Debug("Skipping old user", "userID", uid, "channelID", channelID, "count", count)
+				// b.logger.Debug("Skipping old user", "userID", uid, "channelID", channelID, "count", count)
 				continue
 			}
 
@@ -201,7 +201,7 @@ func (b *Bot) Start() { //nolint:gocyclo,gocognit
 				b.logger.Error("Failed to add spam message to cache", "error", err)
 			}
 
-			b.handleSpamMessage(update.Message, channelID, int64(uid), adminRights)
+			b.handleSpamMessage(update.Message, channelID, int64(uid), adminRights, processed.SpamScore)
 		}
 	}
 }
@@ -224,7 +224,7 @@ func (b *Bot) addSpamMessage(ctx context.Context, hash string) error {
 	return b.redis.Set(ctx, "spam:"+hash, 1, 24*7*time.Hour).Err()
 }
 
-func (b *Bot) handleSpamMessage(message *tgbotapi.Message, channelID, userID int64, adminRights AdminRights) {
+func (b *Bot) handleSpamMessage(message *tgbotapi.Message, channelID, userID int64, adminRights AdminRights, spamScore float64) {
 	// Forward the message to the log channel
 	if logChannelID, exists := b.config.LogChannels[channelID]; exists {
 		forwardMsg := tgbotapi.NewForward(logChannelID, channelID, message.MessageID)
@@ -266,7 +266,7 @@ func (b *Bot) handleSpamMessage(message *tgbotapi.Message, channelID, userID int
 
 	if logChannelID, exists := b.config.LogChannels[channelID]; exists {
 		// Send additional information to the log channel
-		logMessage := fmt.Sprintf(action+"\nUser ID: %d\nChannel ID: %d", userID, channelID)
+		logMessage := fmt.Sprintf(action+"\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f/%.2f", userID, channelID, spamScore, b.config.Threshold)
 		logMsg := tgbotapi.NewMessage(logChannelID, logMessage)
 		_, err := b.api.Send(logMsg)
 		if err != nil {
