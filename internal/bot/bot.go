@@ -427,16 +427,24 @@ func (b *Bot) runDailyStatsReporting() {
 	// 		return
 	// 	}
 	// }
+	const targetHour = 14 // 1 PM UTC
 	for {
 		now := time.Now().UTC()
-		next := now.Add(time.Hour * 24)
-		next = time.Date(next.Year(), next.Month(), next.Day(), 12, 0, 0, 0, time.UTC)
-		duration := next.Sub(now)
+		next := time.Date(now.Year(), now.Month(), now.Day(), targetHour, 0, 0, 0, time.UTC)
 
-		timer := time.NewTimer(duration)
-		<-timer.C
+		if now.Hour() >= targetHour {
+			next = next.Add(24 * time.Hour)
+		}
 
+		b.logger.Info("Scheduled next daily stats report", "next", next)
+
+		time.Sleep(time.Until(next))
+
+		b.logger.Info("Running daily stats reporting")
 		b.sendDailyStats()
+
+		// Sleep for a short duration to prevent multiple executions
+		time.Sleep(time.Minute)
 	}
 }
 
@@ -448,10 +456,11 @@ func (b *Bot) sendDailyStats() {
 		}
 
 		message := fmt.Sprintf("📊 Daily Stats for Channel %d\n\n", channelID)
+		spamCount := stats["spamCount"] + stats["cacheHitCount"]
 		message += fmt.Sprintf("✉️ Checked: %d \n🚫 Spam: %d (%.1f%%)\n",
 			stats["checkedCount"],
-			stats["spamCount"],
-			float64(stats["spamCount"])/float64(stats["checkedCount"])*100)
+			spamCount,
+			float64(spamCount)/float64(stats["checkedCount"])*100)
 		message += fmt.Sprintf("🎯 Cache Hits: %d \n🤖 AI Checks: %d\n",
 			stats["cacheHitCount"],
 			stats["aiCheckedCount"])
