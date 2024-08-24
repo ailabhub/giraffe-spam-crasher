@@ -17,6 +17,10 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+type AIProvider interface {
+	ProcessMessage(ctx context.Context, message string) (string, error)
+}
+
 func main() { //nolint:gocyclo,gocognit
 	ctx := context.Background()
 	logLevel := flag.String("log-level", "info", "Logging level (debug, info, warn, error)")
@@ -103,7 +107,7 @@ func main() { //nolint:gocyclo,gocognit
 	}
 	// Read API key from environment variable
 	var apiKey string
-	var provider ai.Provider
+	var provider AIProvider
 	rateLimit := 0.0
 	switch *apiProvider {
 	case "openai":
@@ -154,7 +158,9 @@ func main() { //nolint:gocyclo,gocognit
 		os.Exit(1)
 	}
 
-	bot, err := bot.New(logger, rdb, provider, &bot.Config{
+	recordProcessor := ai.NewRecordProcessor(provider)
+
+	bot, err := bot.New(logger, rdb, recordProcessor, &bot.Config{
 		Prompt:            prompt,
 		Threshold:         *threshold,
 		NewUserThreshold:  *newUserThreshold,
