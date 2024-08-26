@@ -12,16 +12,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ailabhub/giraffe-spam-crasher/internal/ai"
+	"github.com/ailabhub/giraffe-spam-crasher/internal/structs"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/redis/go-redis/v9"
 )
+
+type RecordProcessor interface {
+	ProcessRecord(message string, prompt string) (structs.Result, error)
+}
 
 type Bot struct {
 	api               *tgbotapi.BotAPI
 	redis             *redis.Client
 	logger            *slog.Logger
-	aiprovider        ai.Provider
+	recordProcessor   RecordProcessor
 	config            *Config
 	adminCache        map[int64]AdminRights
 	cacheMutex        sync.RWMutex
@@ -39,7 +43,7 @@ type Config struct {
 	LogChannels       map[int64]int64
 }
 
-func New(logger *slog.Logger, rdb *redis.Client, aiprovider ai.Provider, config *Config) (*Bot, error) {
+func New(logger *slog.Logger, rdb *redis.Client, recordProcessor RecordProcessor, config *Config) (*Bot, error) {
 	token := os.Getenv("TELEGRAM_BOT_TOKEN")
 	api, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
@@ -56,7 +60,7 @@ func New(logger *slog.Logger, rdb *redis.Client, aiprovider ai.Provider, config 
 		api:               api,
 		redis:             rdb,
 		logger:            logger,
-		aiprovider:        aiprovider,
+		recordProcessor:   recordProcessor,
 		config:            config,
 		adminCache:        make(map[int64]AdminRights),
 		stopChan:          make(chan struct{}),
@@ -362,10 +366,10 @@ func (b *Bot) Stop() {
 	b.redis.Close()
 }
 
-func (b *Bot) checkForSpamWithRetry(text string, maxRetries int, retryDelay time.Duration) (*ai.Result, error) {
+func (b *Bot) checkForSpamWithRetry(text string, maxRetries int, retryDelay time.Duration) (*structs.Result, error) {
 	var lastErr error
 	for i := 0; i < maxRetries; i++ {
-		processed, err := ai.ProcessRecord(text, b.config.Prompt, b.aiprovider)
+		processed, err := b.recordProcessor.ProcessRecord(text, b.config.Prompt)
 		if err == nil {
 			return &processed, nil
 		}
