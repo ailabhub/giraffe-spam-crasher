@@ -4,10 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -75,7 +75,6 @@ func New(logger *slog.Logger, rdb *redis.Client, recordProcessor RecordProcessor
 
 	return bot, nil
 }
-
 func (b *Bot) Start() { //nolint:gocyclo,gocognit
 	b.logger.Info("Authorized on account", "username", b.api.Self.UserName)
 	b.logger.Info("Config", "threshold", b.config.Threshold, "newUserThreshold", b.config.NewUserThreshold, "whitelistChannels", b.config.WhitelistChannels)
@@ -98,139 +97,141 @@ func (b *Bot) Start() { //nolint:gocyclo,gocognit
 	}
 
 	for update := range updates {
-		if update.Message == nil {
-			continue
+		b.handleUpdate(update, &me)
+	}
+}
+
+func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
+	if update.Message == nil || update.Message.ReplyToMessage != nil || update.Message.From.ID == me.ID {
+		return
+	}
+
+	channelID := update.Message.Chat.ID
+	ctx := context.Background()
+
+	if b.isSelfMessage(update.Message, channelID) {
+		b.sendSelfMessageWarning(update.Message)
+		return
+	}
+
+	if !b.isWhitelistedChannel(channelID) {
+		b.logger.Debug("Skipping non-whitelisted channel", "channelID", channelID)
+		return
+	}
+
+	if b.isNewUser(ctx, update.Message) {
+		b.incrementStat(channelID, "checkedCount")
+		messageHash := b.hashMessage(update.Message.Text)
+
+		isSpamCached, err := b.isSpamMessageInCache(ctx, messageHash)
+		if err != nil {
+			b.logger.Error("Error checking for spam message", "error", err)
+			return
 		}
-		if update.Message.ReplyToMessage != nil { // Ignore replies
-			continue
+		if isSpamCached {
+			b.handleCachedSpamMessage(update.Message, channelID)
+		} else {
+			b.processMessage(update.Message, channelID)
 		}
-		if update.Message.From.ID == me.ID { // Ignore self
-			continue
+	}
+}
+
+func (b *Bot) isSelfMessage(message *tgbotapi.Message, channelID int64) bool {
+	userID := message.From.ID
+	return userID == channelID && !b.whitelistChannels[channelID]
+}
+
+func (b *Bot) sendSelfMessageWarning(message *tgbotapi.Message) {
+	replyMsg := tgbotapi.NewMessage(message.Chat.ID, "Sorry, it doesn't work this way. Add me to your channel as an admin.")
+	replyMsg.ReplyToMessageID = message.MessageID
+	if _, err := b.api.Send(replyMsg); err != nil {
+		b.logger.Error("Failed to send reply message", "error", err)
+	}
+}
+
+func (b *Bot) isWhitelistedChannel(channelID int64) bool {
+	return len(b.whitelistChannels) == 0 || b.whitelistChannels[channelID]
+}
+
+func (b *Bot) isNewUser(ctx context.Context, message *tgbotapi.Message) bool {
+	userID := fmt.Sprintf("user%d", message.From.ID)
+	channelID := message.Chat.ID
+	key := fmt.Sprintf("%s:%d", strings.TrimPrefix(userID, "user"), channelID)
+	count, err := b.redis.Get(ctx, key).Int()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		b.logger.Error("Error retrieving count from Redis", "error", err)
+		return false
+	}
+	return count < b.config.NewUserThreshold
+}
+
+func (b *Bot) handleCachedSpamMessage(message *tgbotapi.Message, channelID int64) {
+	b.incrementStat(channelID, "cacheHitCount")
+	adminRights := b.checkAdminRights(channelID, b.api.Self.ID)
+	if adminRights.CanDeleteMessages {
+		deleteMsg := tgbotapi.NewDeleteMessage(channelID, message.MessageID)
+		if _, err := b.api.Request(deleteMsg); err != nil {
+			b.logger.Error("Failed to delete cached spam message", "error", err, "messageID", message.MessageID)
+		} else {
+			b.logger.Info("Deleted cached spam message", "messageID", message.MessageID)
+		}
+	}
+}
+
+func (b *Bot) processMessage(message *tgbotapi.Message, channelID int64) {
+	processed, err := b.checkForSpamWithRetry(message.Text, 3, 100*time.Millisecond)
+	if err != nil {
+		b.logger.Error("Error checking for spam after retries", "error", err)
+		return
+	}
+
+	b.incrementStat(channelID, "aiCheckedCount")
+	b.logger.Debug("Spam check result", "userID", message.From.ID, "channelID", channelID, "spamScore", processed.SpamScore, "reasoning", processed.Reasoning)
+
+	if processed.SpamScore <= b.config.Threshold {
+		b.incrementUserMessageCount(message)
+		b.forwardMessageToLogChannel(message, channelID, processed.SpamScore, false)
+	} else {
+		b.incrementStat(channelID, "spamCount")
+		b.addMessageToSpamCache(b.hashMessage(message.Text))
+		b.handleSpamMessage(message, channelID, message.From.ID, b.checkAdminRights(channelID, b.api.Self.ID), processed.SpamScore)
+	}
+}
+
+func (b *Bot) incrementUserMessageCount(message *tgbotapi.Message) {
+	ctx := context.Background()
+	userID := fmt.Sprintf("user%d", message.From.ID)
+	channelID := message.Chat.ID
+	key := fmt.Sprintf("%s:%d", strings.TrimPrefix(userID, "user"), channelID)
+	if _, err := b.redis.Incr(ctx, key).Result(); err != nil {
+		b.logger.Error("Error incrementing count in Redis", "error", err)
+	}
+}
+
+func (b *Bot) forwardMessageToLogChannel(message *tgbotapi.Message, channelID int64, spamScore float64, isSpam bool) {
+	if logChannelID, exists := b.config.LogChannels[channelID]; exists {
+		forwardMsg := tgbotapi.NewForward(logChannelID, channelID, message.MessageID)
+		if _, err := b.api.Send(forwardMsg); err != nil {
+			b.logger.Error("Failed to forward message to log channel", "error", err, "messageID", message.MessageID, "logChannelID", logChannelID)
 		}
 
-		ctx := context.Background()
-		userID := fmt.Sprintf("user%d", update.Message.From.ID)
-		channelID := update.Message.Chat.ID
-
-		// Check admin rights for this chat
-		adminRights := b.checkAdminRights(channelID, me.ID)
-		b.logger.Debug("Bot admin status for chat", "chatID", channelID, "isAdmin", adminRights)
-
-		// Only process messages of type "message"
-		if update.Message.Text != "" {
-			uid, _ := strconv.Atoi(strings.TrimPrefix(userID, "user"))
-			if int64(uid) == channelID && !b.whitelistChannels[channelID] {
-				b.logger.Debug("Skipping self message", "userID", uid, "channelID", channelID)
-				replyMsg := tgbotapi.NewMessage(channelID, "Sorry, it doesn't work this way. Add me to your channel as an admin.")
-				replyMsg.ReplyToMessageID = update.Message.MessageID
-				_, err := b.api.Send(replyMsg)
-				if err != nil {
-					b.logger.Error("Failed to send reply message", "error", err)
-				}
-				continue
-			}
-
-			// Check if the channel is whitelisted
-			if len(b.whitelistChannels) > 0 && !b.whitelistChannels[channelID] {
-				b.logger.Debug("Skipping non-whitelisted channel", "channelID", channelID)
-				continue
-			}
-
-			key := fmt.Sprintf("%s:%d", strings.TrimPrefix(userID, "user"), channelID)
-			count, err := b.redis.Get(ctx, key).Int()
-			if err != nil && err != redis.Nil {
-				b.logger.Error("Error retrieving count from Redis", "error", err)
-				continue
-			}
-			// b.logger.Debug("User message count", "userID", uid, "channelID", channelID, "count", count)
-
-			if count >= b.config.NewUserThreshold {
-				// b.logger.Debug("Skipping old user", "userID", uid, "channelID", channelID, "count", count)
-				continue
-			}
-
-			// Increment checked messages count
-			b.incrementStat(channelID, "checkedCount")
-
-			// Hash the message
-			messageHash := b.hashMessage(update.Message.Text)
-			b.logger.Debug("Message hash", "userID", uid, "channelID", channelID, "hash", messageHash)
-
-			// Check if the message hash is in the Redis cache
-			isSpam, err := b.isSpamMessage(ctx, messageHash)
-			if err != nil {
-				b.logger.Error("Error checking spam cache", "error", err)
-				continue
-			}
-
-			if isSpam {
-				// Increment cache hit count
-				b.incrementStat(channelID, "cacheHitCount")
-				// Immediately delete the message if it's in the spam cache
-				if adminRights.CanDeleteMessages {
-					deleteMsg := tgbotapi.NewDeleteMessage(channelID, update.Message.MessageID)
-					_, err := b.api.Request(deleteMsg)
-					if err != nil {
-						b.logger.Error("Failed to delete cached spam message", "error", err, "messageID", update.Message.MessageID)
-					} else {
-						b.logger.Info("Deleted cached spam message", "messageID", update.Message.MessageID, "userID", uid, "channelID", channelID)
-					}
-				}
-				continue
-			}
-
-			// Check for spam
-			processed, err := b.checkForSpamWithRetry(update.Message.Text, 3, 100*time.Millisecond)
-			if err != nil {
-				b.logger.Error("Error checking for spam after retries", "error", err)
-				continue
-			}
-
-			// Increment AI checked count
-			b.incrementStat(channelID, "aiCheckedCount")
-
-			b.logger.Debug("Spam check result",
-				"userID", uid,
-				"channelID", channelID,
-				"spamScore", processed.SpamScore,
-				"reasoning", processed.Reasoning)
-
-			if processed.SpamScore <= b.config.Threshold {
-				// Increment the count for the user
-				_, err = b.redis.Incr(ctx, key).Result()
-				if err != nil {
-					b.logger.Error("Error incrementing count in Redis", "error", err)
-				}
-				if logChannelID, exists := b.config.LogChannels[channelID]; exists {
-					forwardMsg := tgbotapi.NewForward(logChannelID, channelID, update.Message.MessageID)
-					_, err := b.api.Send(forwardMsg)
-					if err != nil {
-						b.logger.Error("Failed to forward spam message to log channel", "error", err, "messageID", update.Message.MessageID, "logChannelID", logChannelID)
-					} else {
-						b.logger.Info("Forwarded non-spam message to log channel", "messageID", update.Message.MessageID, "userID", uid, "channelID", channelID, "logChannelID", logChannelID, "spamScore", processed.SpamScore)
-					}
-
-					// Send additional information to the log channel
-					logMessage := fmt.Sprintf("✅ New user check:\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f / %.2f \nReasoning: %s", uid, channelID, processed.SpamScore, b.config.Threshold, processed.Reasoning)
-					logMsg := tgbotapi.NewMessage(logChannelID, logMessage)
-					_, err = b.api.Send(logMsg)
-					if err != nil {
-						b.logger.Error("Failed to send log message to log channel", "error", err, "logChannelID", logChannelID)
-					}
-				}
-				continue
-			}
-
-			// Increment spam count
-			b.incrementStat(channelID, "spamCount")
-
-			// Add the message hash to the Redis spam cache
-			if err := b.addSpamMessage(ctx, messageHash); err != nil {
-				b.logger.Error("Failed to add spam message to cache", "error", err)
-			}
-
-			b.handleSpamMessage(update.Message, channelID, int64(uid), adminRights, processed.SpamScore)
+		action := "✅ New user check"
+		if isSpam {
+			action = "🤡 Spam detected and deleted"
 		}
+
+		logMessage := fmt.Sprintf("%s:\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f / %.2f", action, message.From.ID, channelID, spamScore, b.config.Threshold)
+		logMsg := tgbotapi.NewMessage(logChannelID, logMessage)
+		if _, err := b.api.Send(logMsg); err != nil {
+			b.logger.Error("Failed to send log message to log channel", "error", err, "logChannelID", logChannelID)
+		}
+	}
+}
+
+func (b *Bot) addMessageToSpamCache(messageHash string) {
+	ctx := context.Background()
+	if err := b.addSpamMessage(ctx, messageHash); err != nil {
+		b.logger.Error("Failed to add spam message to cache", "error", err)
 	}
 }
 
@@ -239,7 +240,7 @@ func (b *Bot) hashMessage(message string) string {
 	return hex.EncodeToString(hash[:])
 }
 
-func (b *Bot) isSpamMessage(ctx context.Context, hash string) (bool, error) {
+func (b *Bot) isSpamMessageInCache(ctx context.Context, hash string) (bool, error) {
 	exists, err := b.redis.Exists(ctx, "spam:"+hash).Result()
 	if err != nil {
 		return false, err
@@ -398,7 +399,7 @@ func (b *Bot) getStats(channelID int64) map[string]int64 {
 	for statType, keyPrefix := range b.statsKeys {
 		key := fmt.Sprintf("%s%d", keyPrefix, channelID)
 		count, err := b.redis.Get(ctx, key).Int64()
-		if err != nil && err != redis.Nil {
+		if err != nil && !errors.Is(err, redis.Nil) {
 			b.logger.Error("Failed to get stat", "error", err, "statType", statType, "channelID", channelID)
 			continue
 		}
