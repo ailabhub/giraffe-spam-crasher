@@ -2,30 +2,28 @@ package bot
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/ailabhub/giraffe-spam-crasher/internal/consts"
 	"github.com/ailabhub/giraffe-spam-crasher/internal/structs"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/redis/go-redis/v9"
 )
 
-type RecordProcessor interface {
-	ProcessRecord(message string, prompt string) (structs.Result, error)
+type SpamProcessor interface {
+	CheckForSpam(ctx context.Context, channelID int64, message string) (structs.SpamCheckResult, error)
 }
 
 type Bot struct {
 	api               *tgbotapi.BotAPI
 	redis             *redis.Client
 	logger            *slog.Logger
-	recordProcessor   RecordProcessor
+	spamProcessor     SpamProcessor
 	config            *Config
 	adminCache        map[int64]AdminRights
 	cacheMutex        sync.RWMutex
@@ -43,7 +41,7 @@ type Config struct {
 	LogChannels       map[int64]int64
 }
 
-func New(logger *slog.Logger, rdb *redis.Client, recordProcessor RecordProcessor, config *Config) (*Bot, error) {
+func New(logger *slog.Logger, rdb *redis.Client, spamProcessor SpamProcessor, config *Config) (*Bot, error) {
 	token := os.Getenv("TELEGRAM_BOT_TOKEN")
 	api, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
@@ -60,17 +58,11 @@ func New(logger *slog.Logger, rdb *redis.Client, recordProcessor RecordProcessor
 		api:               api,
 		redis:             rdb,
 		logger:            logger,
-		recordProcessor:   recordProcessor,
+		spamProcessor:     spamProcessor,
 		config:            config,
 		adminCache:        make(map[int64]AdminRights),
 		stopChan:          make(chan struct{}),
 		whitelistChannels: whitelistMap,
-		statsKeys: map[string]string{
-			"spamCount":      "stats:spam_count:",
-			"checkedCount":   "stats:checked_count:",
-			"cacheHitCount":  "stats:cache_hit_count:",
-			"aiCheckedCount": "stats:ai_checked_count:",
-		},
 	}
 
 	return bot, nil
@@ -120,19 +112,8 @@ func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
 	}
 
 	if b.isNewUser(ctx, update.Message) {
-		b.incrementStat(channelID, "checkedCount")
-		messageHash := b.hashMessage(update.Message.Text)
-
-		isSpamCached, err := b.isSpamMessageInCache(ctx, messageHash)
-		if err != nil {
-			b.logger.Error("Error checking for spam message", "error", err)
-			return
-		}
-		if isSpamCached {
-			b.handleCachedSpamMessage(update.Message, channelID)
-		} else {
-			b.processMessage(update.Message, channelID)
-		}
+		b.incrementStat(channelID, consts.StatKeyCheckedCount)
+		b.processMessage(ctx, update.Message, channelID)
 	}
 }
 
@@ -154,9 +135,8 @@ func (b *Bot) isWhitelistedChannel(channelID int64) bool {
 }
 
 func (b *Bot) isNewUser(ctx context.Context, message *tgbotapi.Message) bool {
-	userID := fmt.Sprintf("user%d", message.From.ID)
 	channelID := message.Chat.ID
-	key := fmt.Sprintf("%s:%d", strings.TrimPrefix(userID, "user"), channelID)
+	key := fmt.Sprintf("%d:%d", message.From.ID, channelID)
 	count, err := b.redis.Get(ctx, key).Int()
 	if err != nil && !errors.Is(err, redis.Nil) {
 		b.logger.Error("Error retrieving count from Redis", "error", err)
@@ -165,27 +145,14 @@ func (b *Bot) isNewUser(ctx context.Context, message *tgbotapi.Message) bool {
 	return count < b.config.NewUserThreshold
 }
 
-func (b *Bot) handleCachedSpamMessage(message *tgbotapi.Message, channelID int64) {
-	b.incrementStat(channelID, "cacheHitCount")
-	adminRights := b.checkAdminRights(channelID, b.api.Self.ID)
-	if adminRights.CanDeleteMessages {
-		deleteMsg := tgbotapi.NewDeleteMessage(channelID, message.MessageID)
-		if _, err := b.api.Request(deleteMsg); err != nil {
-			b.logger.Error("Failed to delete cached spam message", "error", err, "messageID", message.MessageID)
-		} else {
-			b.logger.Info("Deleted cached spam message", "messageID", message.MessageID)
-		}
-	}
-}
-
-func (b *Bot) processMessage(message *tgbotapi.Message, channelID int64) {
-	processed, err := b.checkForSpamWithRetry(message.Text, 3, 100*time.Millisecond)
+func (b *Bot) processMessage(ctx context.Context, message *tgbotapi.Message, channelID int64) {
+	processed, err := b.spamProcessor.CheckForSpam(ctx, channelID, message.Text)
 	if err != nil {
 		b.logger.Error("Error checking for spam after retries", "error", err)
 		return
 	}
 
-	b.incrementStat(channelID, "aiCheckedCount")
+	b.incrementStat(channelID, consts.StatKeyAiCheckedCount)
 	b.logger.Debug("Spam check result", "userID", message.From.ID, "channelID", channelID, "spamScore", processed.SpamScore, "reasoning", processed.Reasoning)
 
 	if processed.SpamScore <= b.config.Threshold {
@@ -193,16 +160,14 @@ func (b *Bot) processMessage(message *tgbotapi.Message, channelID int64) {
 		b.forwardMessageToLogChannel(message, channelID, processed.SpamScore, false)
 	} else {
 		b.incrementStat(channelID, "spamCount")
-		b.addMessageToSpamCache(b.hashMessage(message.Text))
 		b.handleSpamMessage(message, channelID, message.From.ID, b.checkAdminRights(channelID, b.api.Self.ID), processed.SpamScore)
 	}
 }
 
 func (b *Bot) incrementUserMessageCount(message *tgbotapi.Message) {
 	ctx := context.Background()
-	userID := fmt.Sprintf("user%d", message.From.ID)
 	channelID := message.Chat.ID
-	key := fmt.Sprintf("%s:%d", strings.TrimPrefix(userID, "user"), channelID)
+	key := fmt.Sprintf("%d:%d", message.From.ID, channelID)
 	if _, err := b.redis.Incr(ctx, key).Result(); err != nil {
 		b.logger.Error("Error incrementing count in Redis", "error", err)
 	}
@@ -226,31 +191,6 @@ func (b *Bot) forwardMessageToLogChannel(message *tgbotapi.Message, channelID in
 			b.logger.Error("Failed to send log message to log channel", "error", err, "logChannelID", logChannelID)
 		}
 	}
-}
-
-func (b *Bot) addMessageToSpamCache(messageHash string) {
-	ctx := context.Background()
-	if err := b.addSpamMessage(ctx, messageHash); err != nil {
-		b.logger.Error("Failed to add spam message to cache", "error", err)
-	}
-}
-
-func (b *Bot) hashMessage(message string) string {
-	hash := sha256.Sum256([]byte(message))
-	return hex.EncodeToString(hash[:])
-}
-
-func (b *Bot) isSpamMessageInCache(ctx context.Context, hash string) (bool, error) {
-	exists, err := b.redis.Exists(ctx, "spam:"+hash).Result()
-	if err != nil {
-		return false, err
-	}
-	return exists == 1, nil
-}
-
-func (b *Bot) addSpamMessage(ctx context.Context, hash string) error {
-	// Store the hash with an expiration time (e.g., 24 hours)
-	return b.redis.Set(ctx, "spam:"+hash, 1, 24*31*time.Hour).Err()
 }
 
 func (b *Bot) handleSpamMessage(message *tgbotapi.Message, channelID, userID int64, adminRights AdminRights, spamScore float64) {
@@ -367,36 +307,20 @@ func (b *Bot) Stop() {
 	b.redis.Close()
 }
 
-func (b *Bot) checkForSpamWithRetry(text string, maxRetries int, retryDelay time.Duration) (*structs.Result, error) {
-	var lastErr error
-	for i := 0; i < maxRetries; i++ {
-		processed, err := b.recordProcessor.ProcessRecord(text, b.config.Prompt)
-		if err == nil {
-			return &processed, nil
-		}
-		lastErr = err
-		b.logger.Warn("Spam check failed, retrying", "attempt", i+1, "error", err)
-		time.Sleep(retryDelay)
-	}
-	return nil, fmt.Errorf("failed to check for spam after %d attempts: %w", maxRetries, lastErr)
-}
-
-// New functions for statistics tracking
-
-func (b *Bot) incrementStat(channelID int64, statType string) {
+func (b *Bot) incrementStat(channelID int64, statType consts.StatKey) {
 	ctx := context.Background()
-	key := fmt.Sprintf("%s%d", b.statsKeys[statType], channelID)
+	key := fmt.Sprintf("%s%d", consts.StatsKeys[statType], channelID)
 	err := b.redis.Incr(ctx, key).Err()
 	if err != nil {
 		b.logger.Error("Failed to increment stat", "error", err, "statType", statType, "channelID", channelID)
 	}
 }
 
-func (b *Bot) getStats(channelID int64) map[string]int64 {
+func (b *Bot) getStats(channelID int64) map[consts.StatKey]int64 {
 	ctx := context.Background()
-	stats := make(map[string]int64)
+	stats := make(map[consts.StatKey]int64)
 
-	for statType, keyPrefix := range b.statsKeys {
+	for statType, keyPrefix := range consts.StatsKeys {
 		key := fmt.Sprintf("%s%d", keyPrefix, channelID)
 		count, err := b.redis.Get(ctx, key).Int64()
 		if err != nil && !errors.Is(err, redis.Nil) {
@@ -411,7 +335,7 @@ func (b *Bot) getStats(channelID int64) map[string]int64 {
 
 func (b *Bot) resetStats(channelID int64) {
 	ctx := context.Background()
-	for _, keyPrefix := range b.statsKeys {
+	for _, keyPrefix := range consts.StatsKeys {
 		key := fmt.Sprintf("%s%d", keyPrefix, channelID)
 		err := b.redis.Del(ctx, key).Err()
 		if err != nil {
@@ -456,19 +380,19 @@ func (b *Bot) runDailyStatsReporting() {
 func (b *Bot) sendDailyStats() {
 	for channelID, logChannelID := range b.config.LogChannels {
 		stats := b.getStats(channelID)
-		if stats["checkedCount"] == 0 {
+		if stats[consts.StatKeyCheckedCount] == 0 {
 			continue
 		}
 
 		message := fmt.Sprintf("📊 Daily Stats for Channel %d\n\n", channelID)
-		spamCount := stats["spamCount"] + stats["cacheHitCount"]
+		spamCount := stats[consts.StatKeySpamCount] + stats[consts.StatKeyCacheHitCount]
 		message += fmt.Sprintf("✉️ Checked: %d \n🚫 Spam: %d (%.1f%%)\n",
-			stats["checkedCount"],
+			stats[consts.StatKeyCheckedCount],
 			spamCount,
-			float64(spamCount)/float64(stats["checkedCount"])*100)
+			float64(spamCount)/float64(stats[consts.StatKeyCheckedCount])*100)
 		message += fmt.Sprintf("🎯 Cache Hits: %d \n🤖 AI Checks: %d\n",
-			stats["cacheHitCount"],
-			stats["aiCheckedCount"])
+			stats[consts.StatKeyCacheHitCount],
+			stats[consts.StatKeyAiCheckedCount])
 
 		msg := tgbotapi.NewMessage(logChannelID, message)
 		_, err := b.api.Send(msg)

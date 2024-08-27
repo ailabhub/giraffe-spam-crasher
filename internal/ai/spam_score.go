@@ -14,6 +14,7 @@ import (
 // а то страшно без теста что-то делать
 // пока все равно запускаем только с claude
 type RecordProcessor struct {
+	prompt         string
 	claudeProvider Provider
 	// openAIProvider Provider
 	// geminiProvider Provider
@@ -21,22 +22,24 @@ type RecordProcessor struct {
 
 func NewRecordProcessor(
 	claudeProvider Provider,
+	prompt string,
 	// openAIProvider Provider,
 	// geminiProvider Provider,
 ) *RecordProcessor {
 	return &RecordProcessor{
 		claudeProvider: claudeProvider,
+		prompt:         prompt,
 		// openAIProvider: openAIProvider,
 		// geminiProvider: geminiProvider,
 	}
 }
 
-func (rp *RecordProcessor) ProcessRecord(message string, prompt string) (structs.Result, error) {
-	prompt = strings.ReplaceAll(prompt, "{{CHANNEL_CONTENT}}", message)
+func (rp *RecordProcessor) GetSpamScoreForMessage(ctx context.Context, message string) (structs.SpamCheckResult, error) {
+	prompt := strings.ReplaceAll(rp.prompt, "{{CHANNEL_CONTENT}}", message)
 
-	response, err := rp.claudeProvider.ProcessMessage(context.Background(), prompt)
+	response, err := rp.claudeProvider.ProcessMessage(ctx, prompt)
 	if err != nil {
-		return structs.Result{}, fmt.Errorf("API error: %w", err)
+		return structs.SpamCheckResult{}, fmt.Errorf("API error: %w", err)
 	}
 
 	// Extract reasoning
@@ -46,7 +49,7 @@ func (rp *RecordProcessor) ProcessRecord(message string, prompt string) (structs
 	if len(reasoningMatch) > 1 {
 		reasoning = reasoningMatch[1]
 	} else {
-		return structs.Result{}, fmt.Errorf("could not extract reasoning from response")
+		return structs.SpamCheckResult{}, fmt.Errorf("could not extract reasoning from response")
 	}
 
 	// Extract JSON
@@ -56,13 +59,13 @@ func (rp *RecordProcessor) ProcessRecord(message string, prompt string) (structs
 	if len(jsonMatch) > 1 {
 		err = json.Unmarshal([]byte(jsonMatch[1]), &classification)
 		if err != nil {
-			return structs.Result{}, fmt.Errorf("failed to parse JSON classification: %w", err)
+			return structs.SpamCheckResult{}, fmt.Errorf("failed to parse JSON classification: %w", err)
 		}
 	} else {
-		return structs.Result{}, fmt.Errorf("could not extract JSON classification from response")
+		return structs.SpamCheckResult{}, fmt.Errorf("could not extract JSON classification from response")
 	}
 
-	return structs.Result{
+	return structs.SpamCheckResult{
 		Reasoning: reasoning,
 		SpamScore: classification.SpamScore,
 	}, nil
