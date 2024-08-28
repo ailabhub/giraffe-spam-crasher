@@ -109,10 +109,10 @@ func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
 		return
 	}
 
-	// if b.isNewUser(ctx, update.Message) {
-	b.incrementStat(channelID, consts.StatKeyCheckedCount)
-	b.processMessage(ctx, update.Message, channelID)
-	// }
+	if b.isNewUser(ctx, update.Message) {
+		b.incrementStat(channelID, consts.StatKeyCheckedCount)
+		b.processMessage(ctx, update.Message, channelID)
+	}
 }
 
 func (b *Bot) isSelfMessage(message *tgbotapi.Message, channelID int64) bool {
@@ -132,16 +132,16 @@ func (b *Bot) isWhitelistedChannel(channelID int64) bool {
 	return len(b.whitelistChannels) == 0 || b.whitelistChannels[channelID]
 }
 
-// func (b *Bot) isNewUser(ctx context.Context, message *tgbotapi.Message) bool {
-// 	channelID := message.Chat.ID
-// 	key := fmt.Sprintf("%d:%d", message.From.ID, channelID)
-// 	count, err := b.redis.Get(ctx, key).Int()
-// 	if err != nil && !errors.Is(err, redis.Nil) {
-// 		slog.Error("Error retrieving count from Redis", "error", err)
-// 		return false
-// 	}
-// 	return count < b.config.NewUserThreshold
-// }
+func (b *Bot) isNewUser(ctx context.Context, message *tgbotapi.Message) bool {
+	channelID := message.Chat.ID
+	key := fmt.Sprintf("%d:%d", message.From.ID, channelID)
+	count, err := b.redis.Get(ctx, key).Int()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		slog.Error("Error retrieving count from Redis", "error", err)
+		return false
+	}
+	return count < b.config.NewUserThreshold
+}
 
 func (b *Bot) processMessage(ctx context.Context, message *tgbotapi.Message, channelID int64) {
 	var processed structs.SpamCheckResult
