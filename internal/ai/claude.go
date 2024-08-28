@@ -19,7 +19,7 @@ import (
 type AnthropicProvider struct {
 	client      *http.Client
 	apiKey      string
-	model       stringisNewUser
+	model       string
 	rateLimiter *rate.Limiter
 	prompt      string
 }
