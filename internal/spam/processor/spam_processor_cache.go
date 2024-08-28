@@ -1,4 +1,4 @@
-package spam_processor
+package processor
 
 import (
 	"context"

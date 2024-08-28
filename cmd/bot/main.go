@@ -14,7 +14,7 @@ import (
 	"github.com/ailabhub/giraffe-spam-crasher/internal/ai"
 	"github.com/ailabhub/giraffe-spam-crasher/internal/bot"
 	"github.com/ailabhub/giraffe-spam-crasher/internal/history"
-	"github.com/ailabhub/giraffe-spam-crasher/internal/spam_processor"
+	"github.com/ailabhub/giraffe-spam-crasher/internal/spam/processor"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -161,8 +161,8 @@ func main() { //nolint:gocyclo,gocognit
 	}
 
 	recordProcessor := ai.NewRecordProcessor(provider, prompt)
-	spamProcessor := spam_processor.NewSpamProcessor(recordProcessor)
-	spamProcessorCache := spam_processor.NewSpamProcessorCache(spamProcessor, rdb)
+	spamProcessor := processor.NewSpamProcessor(recordProcessor)
+	spamProcessorCache := processor.NewSpamProcessorCache(spamProcessor, rdb)
 
 	bot, err := bot.New(rdb, spamProcessorCache, &bot.Config{
 		Threshold:         *threshold,
