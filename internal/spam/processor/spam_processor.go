@@ -12,6 +12,7 @@ import (
 
 type SpamScoring interface {
 	GetSpamScoreForMessage(ctx context.Context, message string) (structs.SpamCheckResult, error)
+	GetSpamScoreForImage(ctx context.Context, imageData []byte) (structs.SpamCheckResult, error)
 }
 
 type SpamProcessor struct {
@@ -22,6 +23,15 @@ func NewSpamProcessor(spamScoring SpamScoring) *SpamProcessor {
 	return &SpamProcessor{
 		SpamScoring: spamScoring,
 	}
+}
+
+func (s *SpamProcessor) CheckImageForSpam(ctx context.Context, imageData []byte) (structs.SpamCheckResult, error) {
+	spamCheckResult, err := s.SpamScoring.GetSpamScoreForImage(ctx, imageData)
+	if err != nil {
+		return structs.SpamCheckResult{}, fmt.Errorf("error processing spam image: %w", err)
+	}
+
+	return spamCheckResult, nil
 }
 
 func (s *SpamProcessor) CheckForSpam(ctx context.Context, _ int64, message string) (structs.SpamCheckResult, error) {

@@ -14,6 +14,10 @@ type OpenAIProvider struct {
 	rateLimiter *rate.Limiter
 }
 
+func (p *OpenAIProvider) ProcessImage(_ context.Context, _ []byte) (string, error) {
+	return "", nil
+}
+
 func NewOpenAIProvider(apiKey, model string, rateLimit float64) *OpenAIProvider {
 	var limiter *rate.Limiter
 	if rateLimit > 0 {

@@ -19,6 +19,15 @@ type SpamProcessorCache struct {
 	redis         *redis.Client
 }
 
+func (s *SpamProcessorCache) CheckImageForSpam(ctx context.Context, imageData []byte) (structs.SpamCheckResult, error) {
+	spamCheckResult, err := s.SpamProcessor.CheckImageForSpam(ctx, imageData)
+	if err != nil {
+		return structs.SpamCheckResult{}, fmt.Errorf("error processing spam image: %w", err)
+	}
+
+	return spamCheckResult, nil
+}
+
 func NewSpamProcessorCache(
 	base *SpamProcessor,
 	redis *redis.Client,

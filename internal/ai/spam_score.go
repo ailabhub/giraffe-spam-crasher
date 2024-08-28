@@ -70,3 +70,36 @@ func (rp *RecordProcessor) GetSpamScoreForMessage(ctx context.Context, message s
 		SpamScore: classification.SpamScore,
 	}, nil
 }
+
+func (rp *RecordProcessor) GetSpamScoreForImage(ctx context.Context, imageData []byte) (structs.SpamCheckResult, error) {
+	response, err := rp.claudeProvider.ProcessImage(ctx, imageData)
+	if err != nil {
+		return structs.SpamCheckResult{}, fmt.Errorf("API error: %w", err)
+	}
+
+	reasoningMatch := reasoningRegex.FindStringSubmatch(response)
+
+	var reasoning string
+	if len(reasoningMatch) > 1 {
+		reasoning = reasoningMatch[1]
+	} else {
+		return structs.SpamCheckResult{}, fmt.Errorf("could not extract reasoning from response")
+	}
+
+	jsonMatch := jsonRegex.FindStringSubmatch(response)
+
+	var classification structs.SpamClassification
+	if len(jsonMatch) > 1 {
+		err = json.Unmarshal([]byte(jsonMatch[1]), &classification)
+		if err != nil {
+			return structs.SpamCheckResult{}, fmt.Errorf("failed to parse JSON classification: %w", err)
+		}
+	} else {
+		return structs.SpamCheckResult{}, fmt.Errorf("could not extract JSON classification from response")
+	}
+
+	return structs.SpamCheckResult{
+		Reasoning: reasoning,
+		SpamScore: classification.SpamScore,
+	}, nil
+}

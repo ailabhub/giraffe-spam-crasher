@@ -15,6 +15,10 @@ type GeminiProvider struct {
 	rateLimiter *rate.Limiter
 }
 
+func (p *GeminiProvider) ProcessImage(_ context.Context, _ []byte) (string, error) {
+	return "", nil
+}
+
 func NewGeminiProvider(apiKey, model string, rateLimit float64) (*GeminiProvider, error) {
 	ctx := context.Background()
 	var limiter *rate.Limiter

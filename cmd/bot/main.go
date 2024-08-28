@@ -20,6 +20,7 @@ import (
 
 type AIProvider interface {
 	ProcessMessage(ctx context.Context, message string) (string, error)
+	ProcessImage(ctx context.Context, imageData []byte) (string, error)
 }
 
 func main() { //nolint:gocyclo,gocognit
@@ -107,6 +108,20 @@ func main() { //nolint:gocyclo,gocognit
 			slog.Info("Total history size", "count", keysCount)
 		}
 	}
+	prompt := ""
+	if *promptPath != "" {
+		promptBytes, err := os.ReadFile(*promptPath)
+		if err != nil {
+			slog.Error("Failed to read prompt file", "error", err)
+			os.Exit(1)
+		}
+		prompt = string(promptBytes)
+	}
+	if prompt == "" {
+		fmt.Println("No prompt provided")
+		os.Exit(1)
+	}
+
 	// Read API key from environment variable
 	var apiKey string
 	var provider AIProvider
@@ -126,7 +141,7 @@ func main() { //nolint:gocyclo,gocognit
 			fmt.Println("ANTHROPIC_API_KEY environment variable is not set")
 			os.Exit(1)
 		}
-		provider = ai.NewAnthropicProvider(apiKey, *model, rateLimit)
+		provider = ai.NewAnthropicProvider(apiKey, *model, rateLimit, prompt)
 		slog.Info("Using Anthropic API", "model", *model)
 	case "gemini":
 		apiKey := os.Getenv("GEMINI_API_KEY")
@@ -144,19 +159,6 @@ func main() { //nolint:gocyclo,gocognit
 		slog.Info("Using Gemini API", "model", *model)
 	default:
 		fmt.Printf("Unsupported API provider: %s\n", *apiProvider)
-		os.Exit(1)
-	}
-	prompt := ""
-	if *promptPath != "" {
-		promptBytes, err := os.ReadFile(*promptPath)
-		if err != nil {
-			slog.Error("Failed to read prompt file", "error", err)
-			os.Exit(1)
-		}
-		prompt = string(promptBytes)
-	}
-	if prompt == "" {
-		fmt.Println("No prompt provided")
 		os.Exit(1)
 	}
 

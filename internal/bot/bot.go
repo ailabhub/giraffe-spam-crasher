@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -17,6 +19,7 @@ import (
 
 type SpamProcessor interface {
 	CheckForSpam(ctx context.Context, channelID int64, message string) (structs.SpamCheckResult, error)
+	CheckImageForSpam(ctx context.Context, imageData []byte) (structs.SpamCheckResult, error)
 }
 
 type Bot struct {
@@ -106,10 +109,10 @@ func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
 		return
 	}
 
-	if b.isNewUser(ctx, update.Message) {
-		b.incrementStat(channelID, consts.StatKeyCheckedCount)
-		b.processMessage(ctx, update.Message, channelID)
-	}
+	// if b.isNewUser(ctx, update.Message) {
+	b.incrementStat(channelID, consts.StatKeyCheckedCount)
+	b.processMessage(ctx, update.Message, channelID)
+	// }
 }
 
 func (b *Bot) isSelfMessage(message *tgbotapi.Message, channelID int64) bool {
@@ -129,19 +132,27 @@ func (b *Bot) isWhitelistedChannel(channelID int64) bool {
 	return len(b.whitelistChannels) == 0 || b.whitelistChannels[channelID]
 }
 
-func (b *Bot) isNewUser(ctx context.Context, message *tgbotapi.Message) bool {
-	channelID := message.Chat.ID
-	key := fmt.Sprintf("%d:%d", message.From.ID, channelID)
-	count, err := b.redis.Get(ctx, key).Int()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		slog.Error("Error retrieving count from Redis", "error", err)
-		return false
-	}
-	return count < b.config.NewUserThreshold
-}
+// func (b *Bot) isNewUser(ctx context.Context, message *tgbotapi.Message) bool {
+// 	channelID := message.Chat.ID
+// 	key := fmt.Sprintf("%d:%d", message.From.ID, channelID)
+// 	count, err := b.redis.Get(ctx, key).Int()
+// 	if err != nil && !errors.Is(err, redis.Nil) {
+// 		slog.Error("Error retrieving count from Redis", "error", err)
+// 		return false
+// 	}
+// 	return count < b.config.NewUserThreshold
+// }
 
 func (b *Bot) processMessage(ctx context.Context, message *tgbotapi.Message, channelID int64) {
-	processed, err := b.spamProcessor.CheckForSpam(ctx, channelID, message.Text)
+	var processed structs.SpamCheckResult
+	var err error
+
+	if len(message.Photo) > 0 {
+		processed, err = b.processImageMessage(ctx, message)
+	} else {
+		processed, err = b.spamProcessor.CheckForSpam(ctx, channelID, message.Text)
+	}
+
 	if err != nil {
 		slog.Error("Error checking for spam after retries", "error", err)
 		return
@@ -157,6 +168,35 @@ func (b *Bot) processMessage(ctx context.Context, message *tgbotapi.Message, cha
 		b.incrementStat(channelID, "spamCount")
 		b.handleSpamMessage(message, channelID, message.From.ID, b.checkAdminRights(channelID, b.api.Self.ID), processed.SpamScore)
 	}
+}
+
+func (b *Bot) processImageMessage(ctx context.Context, message *tgbotapi.Message) (structs.SpamCheckResult, error) {
+	photo := message.Photo[len(message.Photo)-1]
+
+	fileConfig := tgbotapi.FileConfig{FileID: photo.FileID}
+	file, err := b.api.GetFile(fileConfig)
+	if err != nil {
+		return structs.SpamCheckResult{}, fmt.Errorf("error getting file info: %w", err)
+	}
+
+	imageURL := file.Link(b.api.Token)
+	imageData, err := b.downloadImage(imageURL)
+	if err != nil {
+		return structs.SpamCheckResult{}, fmt.Errorf("error downloading image: %w", err)
+	}
+
+	return b.spamProcessor.CheckImageForSpam(ctx, imageData)
+}
+
+func (b *Bot) downloadImage(url string) ([]byte, error) {
+	// nolint
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	return io.ReadAll(resp.Body)
 }
 
 func (b *Bot) incrementUserMessageCount(message *tgbotapi.Message) {

@@ -13,4 +13,5 @@ var (
 
 type Provider interface {
 	ProcessMessage(ctx context.Context, message string) (string, error)
+	ProcessImage(ctx context.Context, imageData []byte) (string, error)
 }
