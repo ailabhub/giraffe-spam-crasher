@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/ailabhub/giraffe-spam-crasher/internal/consts"
 	"github.com/ailabhub/giraffe-spam-crasher/internal/structs"
@@ -14,15 +15,15 @@ import (
 )
 
 type SpamProcessorCache struct {
-	SpamProcessor SpamProcessor
+	SpamProcessor *SpamProcessor
 	redis         *redis.Client
 }
 
 func NewSpamProcessorCache(
-	base SpamProcessor,
+	base *SpamProcessor,
 	redis *redis.Client,
-) SpamProcessorCache {
-	return SpamProcessorCache{
+) *SpamProcessorCache {
+	return &SpamProcessorCache{
 		SpamProcessor: base,
 		redis:         redis,
 	}
@@ -48,7 +49,7 @@ func (s *SpamProcessorCache) CheckForSpam(ctx context.Context, channelID int64, 
 		}
 		err = s.incrementCacheHit(ctx, channelID)
 		if err != nil {
-			// TODO add log
+			slog.Error("incrementCacheHit", "error", err)
 		}
 
 		return result, nil

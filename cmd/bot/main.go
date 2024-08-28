@@ -14,6 +14,7 @@ import (
 	"github.com/ailabhub/giraffe-spam-crasher/internal/ai"
 	"github.com/ailabhub/giraffe-spam-crasher/internal/bot"
 	"github.com/ailabhub/giraffe-spam-crasher/internal/history"
+	"github.com/ailabhub/giraffe-spam-crasher/internal/spam_processor"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -55,15 +56,16 @@ func main() { //nolint:gocyclo,gocognit
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: logLevelValue}))
+	slog.SetDefault(logger)
 
 	redisURL := os.Getenv("REDIS_URL")
 	if redisURL == "" {
-		logger.Error("REDIS_URL environment variable is not set")
+		slog.Error("REDIS_URL environment variable is not set")
 		os.Exit(1)
 	}
 	redisOptions, err := redis.ParseURL(redisURL)
 	if err != nil {
-		logger.Error("Failed to parse Redis URL", "error", err)
+		slog.Error("Failed to parse Redis URL", "error", err)
 		os.Exit(1)
 	}
 
@@ -71,24 +73,24 @@ func main() { //nolint:gocyclo,gocognit
 
 	_, err = rdb.Ping(ctx).Result()
 	if err != nil {
-		logger.Error("Failed to connect to Redis", "error", err)
+		slog.Error("Failed to connect to Redis", "error", err)
 		os.Exit(1)
 	}
 
 	defer rdb.Close()
 
-	logger.Info("Connected to Redis", "url", redisURL)
+	slog.Info("Connected to Redis", "url", redisURL)
 
 	// Load history if the flag is not empty and Redis is empty
 	if *historyFile != "" {
 		err := history.ProcessFile(*historyFile, rdb)
 		if err != nil {
-			logger.Error("Failed to load history", "error", err)
+			slog.Error("Failed to load history", "error", err)
 			// Decide whether to continue or exit based on your requirements
 			// os.Exit(1)
 		} else {
-			logger.Info("History loaded", "file", *historyFile)
-			logger.Info("Exiting, run without the --history flag to continue")
+			slog.Info("History loaded", "file", *historyFile)
+			slog.Info("Exiting, run without the --history flag to continue")
 			os.Exit(0)
 		}
 	} else {
@@ -96,13 +98,13 @@ func main() { //nolint:gocyclo,gocognit
 		// Check if Redis is empty
 		keysCount, err := rdb.DBSize(ctx).Result()
 		if err != nil {
-			logger.Error("Failed to get Redis database size", "error", err)
+			slog.Error("Failed to get Redis database size", "error", err)
 			os.Exit(1)
 		}
 		if keysCount == 0 {
-			logger.Warn("REDIS DATABASE IS EMPTY, STARTING WITH AN EMPTY HISTORY!")
+			slog.Warn("REDIS DATABASE IS EMPTY, STARTING WITH AN EMPTY HISTORY!")
 		} else {
-			logger.Info("Total history size", "count", keysCount)
+			slog.Info("Total history size", "count", keysCount)
 		}
 	}
 	// Read API key from environment variable
@@ -117,7 +119,7 @@ func main() { //nolint:gocyclo,gocognit
 			os.Exit(1)
 		}
 		provider = ai.NewOpenAIProvider(apiKey, *model, rateLimit)
-		logger.Info("Using OpenAI API", "model", *model)
+		slog.Info("Using OpenAI API", "model", *model)
 	case "anthropic":
 		apiKey = os.Getenv("ANTHROPIC_API_KEY")
 		if apiKey == "" {
@@ -125,21 +127,21 @@ func main() { //nolint:gocyclo,gocognit
 			os.Exit(1)
 		}
 		provider = ai.NewAnthropicProvider(apiKey, *model, rateLimit)
-		logger.Info("Using Anthropic API", "model", *model)
+		slog.Info("Using Anthropic API", "model", *model)
 	case "gemini":
 		apiKey := os.Getenv("GEMINI_API_KEY")
 		if apiKey == "" {
-			logger.Error("GEMINI_API_KEY environment variable is not set")
+			slog.Error("GEMINI_API_KEY environment variable is not set")
 			os.Exit(1)
 		}
 
 		geminiProvider, err := ai.NewGeminiProvider(apiKey, *model, rateLimit)
 		if err != nil {
-			logger.Error("Error creating Gemini provider", "error", err)
+			slog.Error("Error creating Gemini provider", "error", err)
 			os.Exit(1)
 		}
 		provider = geminiProvider
-		logger.Info("Using Gemini API", "model", *model)
+		slog.Info("Using Gemini API", "model", *model)
 	default:
 		fmt.Printf("Unsupported API provider: %s\n", *apiProvider)
 		os.Exit(1)
@@ -148,7 +150,7 @@ func main() { //nolint:gocyclo,gocognit
 	if *promptPath != "" {
 		promptBytes, err := os.ReadFile(*promptPath)
 		if err != nil {
-			logger.Error("Failed to read prompt file", "error", err)
+			slog.Error("Failed to read prompt file", "error", err)
 			os.Exit(1)
 		}
 		prompt = string(promptBytes)
@@ -158,10 +160,11 @@ func main() { //nolint:gocyclo,gocognit
 		os.Exit(1)
 	}
 
-	recordProcessor := ai.NewRecordProcessor(provider)
+	recordProcessor := ai.NewRecordProcessor(provider, prompt)
+	spamProcessor := spam_processor.NewSpamProcessor(recordProcessor)
+	spamProcessorCache := spam_processor.NewSpamProcessorCache(spamProcessor, rdb)
 
-	bot, err := bot.New(logger, rdb, recordProcessor, &bot.Config{
-		Prompt:            prompt,
+	bot, err := bot.New(rdb, spamProcessorCache, &bot.Config{
 		Threshold:         *threshold,
 		NewUserThreshold:  *newUserThreshold,
 		WhitelistChannels: whitelistChannels,
@@ -169,7 +172,7 @@ func main() { //nolint:gocyclo,gocognit
 	})
 
 	if err != nil {
-		logger.Error("Failed to create bot", "error", err)
+		slog.Error("Failed to create bot", "error", err)
 		os.Exit(1)
 	}
 
@@ -180,7 +183,7 @@ func main() { //nolint:gocyclo,gocognit
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	logger.Info("Shutting down bot...")
+	slog.Info("Shutting down bot...")
 	bot.Stop()
 }
 

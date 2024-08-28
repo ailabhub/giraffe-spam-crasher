@@ -3,6 +3,7 @@ package spam_processor
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/avast/retry-go"
 
@@ -38,9 +39,8 @@ func (s *SpamProcessor) CheckForSpam(ctx context.Context, _ int64, message strin
 
 			return nil
 		},
-		retry.OnRetry(func(_ uint, err error) {
-			// TODO meh
-			// b.logger.Warn("Spam check failed, retrying", "attempt", i+1, "error", err)
+		retry.OnRetry(func(i uint, err error) {
+			slog.Warn("Spam check failed, retrying", "attempt", i, "error", err)
 		}),
 		retry.Attempts(3),
 	)

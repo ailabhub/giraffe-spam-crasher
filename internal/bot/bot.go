@@ -22,26 +22,22 @@ type SpamProcessor interface {
 type Bot struct {
 	api               *tgbotapi.BotAPI
 	redis             *redis.Client
-	logger            *slog.Logger
 	spamProcessor     SpamProcessor
 	config            *Config
 	adminCache        map[int64]AdminRights
 	cacheMutex        sync.RWMutex
 	stopChan          chan struct{}
 	whitelistChannels map[int64]bool
-	// New field for statistics
-	statsKeys map[string]string
 }
 
 type Config struct {
-	Prompt            string
 	Threshold         float64
 	NewUserThreshold  int
 	WhitelistChannels []int64
 	LogChannels       map[int64]int64
 }
 
-func New(logger *slog.Logger, rdb *redis.Client, spamProcessor SpamProcessor, config *Config) (*Bot, error) {
+func New(rdb *redis.Client, spamProcessor SpamProcessor, config *Config) (*Bot, error) {
 	token := os.Getenv("TELEGRAM_BOT_TOKEN")
 	api, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
@@ -57,7 +53,6 @@ func New(logger *slog.Logger, rdb *redis.Client, spamProcessor SpamProcessor, co
 	bot := &Bot{
 		api:               api,
 		redis:             rdb,
-		logger:            logger,
 		spamProcessor:     spamProcessor,
 		config:            config,
 		adminCache:        make(map[int64]AdminRights),
@@ -68,9 +63,9 @@ func New(logger *slog.Logger, rdb *redis.Client, spamProcessor SpamProcessor, co
 	return bot, nil
 }
 func (b *Bot) Start() { //nolint:gocyclo,gocognit
-	b.logger.Info("Authorized on account", "username", b.api.Self.UserName)
-	b.logger.Info("Config", "threshold", b.config.Threshold, "newUserThreshold", b.config.NewUserThreshold, "whitelistChannels", b.config.WhitelistChannels)
-	b.logger.Info("Starting bot")
+	slog.Info("Authorized on account", "username", b.api.Self.UserName)
+	slog.Info("Config", "threshold", b.config.Threshold, "newUserThreshold", b.config.NewUserThreshold, "whitelistChannels", b.config.WhitelistChannels)
+	slog.Info("Starting bot")
 
 	// Start the cache clearing goroutine
 	go b.clearAdminCacheRoutine()
@@ -84,7 +79,7 @@ func (b *Bot) Start() { //nolint:gocyclo,gocognit
 	updates := b.api.GetUpdatesChan(u)
 	me, err := b.api.GetMe()
 	if err != nil {
-		b.logger.Error("Failed to get bot info", "error", err)
+		slog.Error("Failed to get bot info", "error", err)
 		return
 	}
 
@@ -107,7 +102,7 @@ func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
 	}
 
 	if !b.isWhitelistedChannel(channelID) {
-		b.logger.Debug("Skipping non-whitelisted channel", "channelID", channelID)
+		slog.Debug("Skipping non-whitelisted channel", "channelID", channelID)
 		return
 	}
 
@@ -126,7 +121,7 @@ func (b *Bot) sendSelfMessageWarning(message *tgbotapi.Message) {
 	replyMsg := tgbotapi.NewMessage(message.Chat.ID, "Sorry, it doesn't work this way. Add me to your channel as an admin.")
 	replyMsg.ReplyToMessageID = message.MessageID
 	if _, err := b.api.Send(replyMsg); err != nil {
-		b.logger.Error("Failed to send reply message", "error", err)
+		slog.Error("Failed to send reply message", "error", err)
 	}
 }
 
@@ -139,7 +134,7 @@ func (b *Bot) isNewUser(ctx context.Context, message *tgbotapi.Message) bool {
 	key := fmt.Sprintf("%d:%d", message.From.ID, channelID)
 	count, err := b.redis.Get(ctx, key).Int()
 	if err != nil && !errors.Is(err, redis.Nil) {
-		b.logger.Error("Error retrieving count from Redis", "error", err)
+		slog.Error("Error retrieving count from Redis", "error", err)
 		return false
 	}
 	return count < b.config.NewUserThreshold
@@ -148,12 +143,12 @@ func (b *Bot) isNewUser(ctx context.Context, message *tgbotapi.Message) bool {
 func (b *Bot) processMessage(ctx context.Context, message *tgbotapi.Message, channelID int64) {
 	processed, err := b.spamProcessor.CheckForSpam(ctx, channelID, message.Text)
 	if err != nil {
-		b.logger.Error("Error checking for spam after retries", "error", err)
+		slog.Error("Error checking for spam after retries", "error", err)
 		return
 	}
 
 	b.incrementStat(channelID, consts.StatKeyAiCheckedCount)
-	b.logger.Debug("Spam check result", "userID", message.From.ID, "channelID", channelID, "spamScore", processed.SpamScore, "reasoning", processed.Reasoning)
+	slog.Debug("Spam check result", "userID", message.From.ID, "channelID", channelID, "spamScore", processed.SpamScore, "reasoning", processed.Reasoning)
 
 	if processed.SpamScore <= b.config.Threshold {
 		b.incrementUserMessageCount(message)
@@ -169,7 +164,7 @@ func (b *Bot) incrementUserMessageCount(message *tgbotapi.Message) {
 	channelID := message.Chat.ID
 	key := fmt.Sprintf("%d:%d", message.From.ID, channelID)
 	if _, err := b.redis.Incr(ctx, key).Result(); err != nil {
-		b.logger.Error("Error incrementing count in Redis", "error", err)
+		slog.Error("Error incrementing count in Redis", "error", err)
 	}
 }
 
@@ -177,7 +172,7 @@ func (b *Bot) forwardMessageToLogChannel(message *tgbotapi.Message, channelID in
 	if logChannelID, exists := b.config.LogChannels[channelID]; exists {
 		forwardMsg := tgbotapi.NewForward(logChannelID, channelID, message.MessageID)
 		if _, err := b.api.Send(forwardMsg); err != nil {
-			b.logger.Error("Failed to forward message to log channel", "error", err, "messageID", message.MessageID, "logChannelID", logChannelID)
+			slog.Error("Failed to forward message to log channel", "error", err, "messageID", message.MessageID, "logChannelID", logChannelID)
 		}
 
 		action := "✅ New user check"
@@ -188,7 +183,7 @@ func (b *Bot) forwardMessageToLogChannel(message *tgbotapi.Message, channelID in
 		logMessage := fmt.Sprintf("%s:\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f / %.2f", action, message.From.ID, channelID, spamScore, b.config.Threshold)
 		logMsg := tgbotapi.NewMessage(logChannelID, logMessage)
 		if _, err := b.api.Send(logMsg); err != nil {
-			b.logger.Error("Failed to send log message to log channel", "error", err, "logChannelID", logChannelID)
+			slog.Error("Failed to send log message to log channel", "error", err, "logChannelID", logChannelID)
 		}
 	}
 }
@@ -199,9 +194,9 @@ func (b *Bot) handleSpamMessage(message *tgbotapi.Message, channelID, userID int
 		forwardMsg := tgbotapi.NewForward(logChannelID, channelID, message.MessageID)
 		_, err := b.api.Send(forwardMsg)
 		if err != nil {
-			b.logger.Error("Failed to forward spam message to log channel", "error", err, "messageID", message.MessageID, "logChannelID", logChannelID)
+			slog.Error("Failed to forward spam message to log channel", "error", err, "messageID", message.MessageID, "logChannelID", logChannelID)
 		} else {
-			b.logger.Info("Forwarded spam message to log channel", "messageID", message.MessageID, "userID", userID, "channelID", channelID, "logChannelID", logChannelID)
+			slog.Info("Forwarded spam message to log channel", "messageID", message.MessageID, "userID", userID, "channelID", channelID, "logChannelID", logChannelID)
 		}
 	}
 
@@ -211,9 +206,9 @@ func (b *Bot) handleSpamMessage(message *tgbotapi.Message, channelID, userID int
 		deleteMsg := tgbotapi.NewDeleteMessage(channelID, message.MessageID)
 		_, err := b.api.Request(deleteMsg)
 		if err != nil {
-			b.logger.Error("Failed to delete spam message", "error", err, "messageID", message.MessageID)
+			slog.Error("Failed to delete spam message", "error", err, "messageID", message.MessageID)
 		} else {
-			b.logger.Info("Deleted spam message", "messageID", message.MessageID, "userID", userID, "channelID", channelID)
+			slog.Info("Deleted spam message", "messageID", message.MessageID, "userID", userID, "channelID", channelID)
 		}
 	}
 
@@ -227,9 +222,9 @@ func (b *Bot) handleSpamMessage(message *tgbotapi.Message, channelID, userID int
 		}
 		_, err := b.api.Request(restrictConfig)
 		if err != nil {
-			b.logger.Error("Failed to restrict user", "error", err, "userID", userID, "channelID", channelID)
+			slog.Error("Failed to restrict user", "error", err, "userID", userID, "channelID", channelID)
 		} else {
-			b.logger.Info("Restricted user", "userID", userID, "channelID", channelID)
+			slog.Info("Restricted user", "userID", userID, "channelID", channelID)
 		}
 	}
 
@@ -239,7 +234,7 @@ func (b *Bot) handleSpamMessage(message *tgbotapi.Message, channelID, userID int
 		logMsg := tgbotapi.NewMessage(logChannelID, logMessage)
 		_, err := b.api.Send(logMsg)
 		if err != nil {
-			b.logger.Error("Failed to send log message to log channel", "error", err, "logChannelID", logChannelID)
+			slog.Error("Failed to send log message to log channel", "error", err, "logChannelID", logChannelID)
 		}
 	}
 }
@@ -269,7 +264,7 @@ func (b *Bot) checkAdminRights(chatID int64, botID int64) AdminRights {
 	})
 
 	if err != nil {
-		b.logger.Error("Error getting chat member", "error", err, "chatID", chatID, "botID", botID)
+		slog.Error("Error getting chat member", "error", err, "chatID", chatID, "botID", botID)
 		return adminRights
 	}
 
@@ -312,7 +307,7 @@ func (b *Bot) incrementStat(channelID int64, statType consts.StatKey) {
 	key := fmt.Sprintf("%s%d", consts.StatsKeys[statType], channelID)
 	err := b.redis.Incr(ctx, key).Err()
 	if err != nil {
-		b.logger.Error("Failed to increment stat", "error", err, "statType", statType, "channelID", channelID)
+		slog.Error("Failed to increment stat", "error", err, "statType", statType, "channelID", channelID)
 	}
 }
 
@@ -324,7 +319,7 @@ func (b *Bot) getStats(channelID int64) map[consts.StatKey]int64 {
 		key := fmt.Sprintf("%s%d", keyPrefix, channelID)
 		count, err := b.redis.Get(ctx, key).Int64()
 		if err != nil && !errors.Is(err, redis.Nil) {
-			b.logger.Error("Failed to get stat", "error", err, "statType", statType, "channelID", channelID)
+			slog.Error("Failed to get stat", "error", err, "statType", statType, "channelID", channelID)
 			continue
 		}
 		stats[statType] = count
@@ -339,7 +334,7 @@ func (b *Bot) resetStats(channelID int64) {
 		key := fmt.Sprintf("%s%d", keyPrefix, channelID)
 		err := b.redis.Del(ctx, key).Err()
 		if err != nil {
-			b.logger.Error("Failed to reset stat", "error", err, "key", key, "channelID", channelID)
+			slog.Error("Failed to reset stat", "error", err, "key", key, "channelID", channelID)
 		}
 	}
 }
@@ -365,11 +360,11 @@ func (b *Bot) runDailyStatsReporting() {
 			next = next.Add(24 * time.Hour)
 		}
 
-		b.logger.Info("Scheduled next daily stats report", "next", next)
+		slog.Info("Scheduled next daily stats report", "next", next)
 
 		time.Sleep(time.Until(next))
 
-		b.logger.Info("Running daily stats reporting")
+		slog.Info("Running daily stats reporting")
 		b.sendDailyStats()
 
 		// Sleep for a short duration to prevent multiple executions
@@ -397,7 +392,7 @@ func (b *Bot) sendDailyStats() {
 		msg := tgbotapi.NewMessage(logChannelID, message)
 		_, err := b.api.Send(msg)
 		if err != nil {
-			b.logger.Error("Failed to send daily stats", "error", err, "channelID", channelID, "logChannelID", logChannelID)
+			slog.Error("Failed to send daily stats", "error", err, "channelID", channelID, "logChannelID", logChannelID)
 		}
 
 		// Reset stats after sending

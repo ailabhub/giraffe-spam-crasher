@@ -14,8 +14,8 @@ import (
 // а то страшно без теста что-то делать
 // пока все равно запускаем только с claude
 type RecordProcessor struct {
-	prompt         string
 	claudeProvider Provider
+	prompt         string
 	// openAIProvider Provider
 	// geminiProvider Provider
 }
