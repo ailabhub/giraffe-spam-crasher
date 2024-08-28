@@ -3,6 +3,7 @@ module github.com/ailabhub/giraffe-spam-crasher
 go 1.21.1
 
 require (
+	github.com/avast/retry-go v2.7.0+incompatible
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/google/generative-ai-go v0.17.0
 	github.com/redis/go-redis/v9 v9.6.1
