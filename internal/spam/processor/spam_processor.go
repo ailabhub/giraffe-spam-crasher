@@ -29,8 +29,6 @@ func NewSpamProcessor(
 }
 
 func (s *SpamProcessor) CheckForSpam(ctx context.Context, message structs.Message) (structs.SpamCheckResult, error) {
-	slog.Info("Checking for spam", "message", message.Text, "len images", len(message.Images))
-
 	var (
 		spamScore structs.SpamCheckResult
 		err       error

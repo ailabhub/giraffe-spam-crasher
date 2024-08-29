@@ -95,8 +95,6 @@ func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
 		return
 	}
 
-	slog.Info("Received message", "messageID", update.Message.MessageID, "userID", update.Message.From.ID, "channelID", update.Message.Chat.ID, "text", update.Message.Text)
-
 	channelID := update.Message.Chat.ID
 	ctx := context.Background()
 
