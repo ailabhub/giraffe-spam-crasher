@@ -18,8 +18,7 @@ import (
 )
 
 type SpamProcessor interface {
-	CheckForSpam(ctx context.Context, channelID int64, message string) (structs.SpamCheckResult, error)
-	CheckImageForSpam(ctx context.Context, imageData []byte) (structs.SpamCheckResult, error)
+	CheckForSpam(ctx context.Context, message structs.Message) (structs.SpamCheckResult, error)
 }
 
 type Bot struct {
@@ -111,7 +110,7 @@ func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
 
 	if b.isNewUser(ctx, update.Message) {
 		b.incrementStat(channelID, consts.StatKeyCheckedCount)
-		b.processMessage(ctx, update.Message, channelID)
+		b.processTelegramMessage(ctx, update.Message)
 	}
 }
 
@@ -143,49 +142,38 @@ func (b *Bot) isNewUser(ctx context.Context, message *tgbotapi.Message) bool {
 	return count < b.config.NewUserThreshold
 }
 
-func (b *Bot) processMessage(ctx context.Context, message *tgbotapi.Message, channelID int64) {
+func (b *Bot) processTelegramMessage(ctx context.Context, telegramMessage *tgbotapi.Message) {
 	var processed structs.SpamCheckResult
-	var err error
 
-	if len(message.Photo) > 0 {
-		processed, err = b.processImageMessage(ctx, message)
-	} else {
-		processed, err = b.spamProcessor.CheckForSpam(ctx, channelID, message.Text)
+	channelID := telegramMessage.Chat.ID
+
+	message, err := b.fromTGToInternalMessage(ctx, telegramMessage)
+	if err != nil {
+		slog.Error("Error converting message", "error", err)
+		return
 	}
 
+	processed, err = b.spamProcessor.CheckForSpam(ctx, message)
 	if err != nil {
 		slog.Error("Error checking for spam after retries", "error", err)
 		return
 	}
 
-	b.incrementStat(channelID, consts.StatKeyAiCheckedCount)
-	slog.Debug("Spam check result", "userID", message.From.ID, "channelID", channelID, "spamScore", processed.SpamScore, "reasoning", processed.Reasoning)
+	if processed.FromCache {
+		b.incrementStat(channelID, consts.StatKeyCacheHitCount)
+	} else {
+		b.incrementStat(channelID, consts.StatKeyAiCheckedCount)
+	}
+
+	slog.Debug("Spam check result", "userID", telegramMessage.From.ID, "channelID", telegramMessage, "spamScore", processed.SpamScore, "reasoning", processed.Reasoning)
 
 	if processed.SpamScore <= b.config.Threshold {
-		b.incrementUserMessageCount(message)
-		b.forwardMessageToLogChannel(message, channelID, processed.SpamScore, false)
+		b.incrementUserMessageCount(telegramMessage)
+		b.forwardMessageToLogChannel(telegramMessage, channelID, processed.SpamScore, false)
 	} else {
 		b.incrementStat(channelID, "spamCount")
-		b.handleSpamMessage(message, channelID, message.From.ID, b.checkAdminRights(channelID, b.api.Self.ID), processed.SpamScore)
+		b.handleSpamMessage(telegramMessage, channelID, telegramMessage.From.ID, b.checkAdminRights(channelID, b.api.Self.ID), processed.SpamScore)
 	}
-}
-
-func (b *Bot) processImageMessage(ctx context.Context, message *tgbotapi.Message) (structs.SpamCheckResult, error) {
-	photo := message.Photo[len(message.Photo)-1]
-
-	fileConfig := tgbotapi.FileConfig{FileID: photo.FileID}
-	file, err := b.api.GetFile(fileConfig)
-	if err != nil {
-		return structs.SpamCheckResult{}, fmt.Errorf("error getting file info: %w", err)
-	}
-
-	imageURL := file.Link(b.api.Token)
-	imageData, err := b.downloadImage(imageURL)
-	if err != nil {
-		return structs.SpamCheckResult{}, fmt.Errorf("error downloading image: %w", err)
-	}
-
-	return b.spamProcessor.CheckImageForSpam(ctx, imageData)
 }
 
 func (b *Bot) downloadImage(url string) ([]byte, error) {
@@ -438,4 +426,37 @@ func (b *Bot) sendDailyStats() {
 		// Reset stats after sending
 		b.resetStats(channelID)
 	}
+}
+
+func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.Message) (structs.Message, error) {
+	message := structs.Message{
+		Text: tgMessage.Text,
+	}
+
+	for _, photo := range tgMessage.Photo {
+		imageData, err := b.downloadTelegramImage(ctx, photo)
+		if err != nil {
+			return structs.Message{}, fmt.Errorf("error downloading image: %w", err)
+		}
+
+		message.Images = append(message.Images, imageData)
+	}
+
+	return message, nil
+}
+
+func (b *Bot) downloadTelegramImage(_ context.Context, photo tgbotapi.PhotoSize) ([]byte, error) {
+	fileConfig := tgbotapi.FileConfig{FileID: photo.FileID}
+	file, err := b.api.GetFile(fileConfig)
+	if err != nil {
+		return nil, fmt.Errorf("error getting file info: %w", err)
+	}
+
+	imageURL := file.Link(b.api.Token)
+	imageData, err := b.downloadImage(imageURL)
+	if err != nil {
+		return nil, fmt.Errorf("error downloading image: %w", err)
+	}
+
+	return imageData, nil
 }
