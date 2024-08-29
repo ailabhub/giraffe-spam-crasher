@@ -110,10 +110,10 @@ func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
 		return
 	}
 
-	// if b.isNewUser(ctx, update.Message) {
-	b.incrementStat(channelID, consts.StatKeyCheckedCount)
-	b.processTelegramMessage(ctx, update.Message)
-	// }
+	if b.isNewUser(ctx, update.Message) {
+		b.incrementStat(channelID, consts.StatKeyCheckedCount)
+		b.processTelegramMessage(ctx, update.Message)
+	}
 }
 
 func (b *Bot) isSelfMessage(message *tgbotapi.Message, channelID int64) bool {
