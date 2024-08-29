@@ -30,23 +30,19 @@ To complete this task, follow these steps:
    - If the user mentioned Samat or "Самат" (it's the name of the admin), then it's less likely to be spam.
    - Highly stylized, colorful images with promotional text are likely spam
 
-3. Provide your reasoning for the spam score you will assign. Include specific examples from the content that support your conclusion. Write your reasoning inside <reasoning> tags. Make the reasoning short and laconic, but meaningful.
+3. Provide your reasoning for the spam score you will assign. Include specific examples from the content that support your conclusion. Write your reasoning inside json as "reasoning". Make the reasoning short and laconic, but meaningful.
 
 4. Based on your analysis, determine a spam score between 0.0 and 1.0, where:
    - 0.0 indicates definitely not spam
    - 0.5 indicates uncertainty or equal likelihood of being spam or not spam
    - 1.0 indicates definitely spam
 
-5. Output your result in JSON format with a single key "spam_score" and the corresponding float value between 0.0 and 1.0. Round the score to two decimal places. Enclose the JSON output in <json> tags.
+5. Output your result in JSON format with key "spam_score" and the corresponding float value between 0.0 and 1.0. Round the score to two decimal places. Enclose the JSON output in <json> tags.
 
 Your output should follow this format:
 
-<reasoning>
-[Your reasoning here]
-</reasoning>
-
 <json>
-{"spam_score": 0.00}
+{"spam_score": 0.00, "reasoning": "[Your reasoning here]"}
 </json>
 
 Remember to base your analysis on the content provided, apply the rules about single links and mentions of Samat or "Самат", and provide clear reasoning for your classification before giving the final spam score.

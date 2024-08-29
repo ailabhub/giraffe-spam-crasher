@@ -95,6 +95,8 @@ func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
 		return
 	}
 
+	slog.Info("Received message", "messageID", update.Message.MessageID, "userID", update.Message.From.ID, "channelID", update.Message.Chat.ID, "text", update.Message.Text)
+
 	channelID := update.Message.Chat.ID
 	ctx := context.Background()
 
@@ -108,10 +110,10 @@ func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
 		return
 	}
 
-	if b.isNewUser(ctx, update.Message) {
-		b.incrementStat(channelID, consts.StatKeyCheckedCount)
-		b.processTelegramMessage(ctx, update.Message)
-	}
+	// if b.isNewUser(ctx, update.Message) {
+	b.incrementStat(channelID, consts.StatKeyCheckedCount)
+	b.processTelegramMessage(ctx, update.Message)
+	// }
 }
 
 func (b *Bot) isSelfMessage(message *tgbotapi.Message, channelID int64) bool {
@@ -169,7 +171,7 @@ func (b *Bot) processTelegramMessage(ctx context.Context, telegramMessage *tgbot
 
 	if processed.SpamScore <= b.config.Threshold {
 		b.incrementUserMessageCount(telegramMessage)
-		b.forwardMessageToLogChannel(telegramMessage, channelID, processed.SpamScore, false)
+		b.forwardMessageToLogChannel(telegramMessage, processed, channelID, processed.SpamScore, false)
 	} else {
 		b.incrementStat(channelID, "spamCount")
 		b.handleSpamMessage(telegramMessage, channelID, telegramMessage.From.ID, b.checkAdminRights(channelID, b.api.Self.ID), processed.SpamScore)
@@ -196,7 +198,7 @@ func (b *Bot) incrementUserMessageCount(message *tgbotapi.Message) {
 	}
 }
 
-func (b *Bot) forwardMessageToLogChannel(message *tgbotapi.Message, channelID int64, spamScore float64, isSpam bool) {
+func (b *Bot) forwardMessageToLogChannel(message *tgbotapi.Message, processed structs.SpamCheckResult, channelID int64, spamScore float64, isSpam bool) {
 	if logChannelID, exists := b.config.LogChannels[channelID]; exists {
 		forwardMsg := tgbotapi.NewForward(logChannelID, channelID, message.MessageID)
 		if _, err := b.api.Send(forwardMsg); err != nil {
@@ -208,7 +210,8 @@ func (b *Bot) forwardMessageToLogChannel(message *tgbotapi.Message, channelID in
 			action = "🤡 Spam detected and deleted"
 		}
 
-		logMessage := fmt.Sprintf("%s:\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f / %.2f", action, message.From.ID, channelID, spamScore, b.config.Threshold)
+		logMessage := fmt.Sprintf("%s:\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f / %.2f \nReasoning: \n%s", action, message.From.ID, channelID, spamScore, b.config.Threshold, processed.Reasoning)
+
 		logMsg := tgbotapi.NewMessage(logChannelID, logMessage)
 		if _, err := b.api.Send(logMsg); err != nil {
 			slog.Error("Failed to send log message to log channel", "error", err, "logChannelID", logChannelID)
@@ -433,12 +436,15 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 		Text: tgMessage.Text,
 	}
 
-	for _, photo := range tgMessage.Photo {
-		imageData, err := b.downloadTelegramImage(ctx, photo)
+	if len(tgMessage.Photo) > 0 {
+		// телега дает 3 размера фотографии, от низкого до высокого качества, берем самое высокое качество и ресайзим вручную
+		// TODO? возможно стоит не ресайзить, а брать оригинал низкого качества
+		imageData, err := b.downloadTelegramImage(ctx, tgMessage.Photo[len(tgMessage.Photo)-1])
 		if err != nil {
 			return structs.Message{}, fmt.Errorf("error downloading image: %w", err)
 		}
 
+		message.Text = tgMessage.Caption
 		message.Images = append(message.Images, imageData)
 	}
 

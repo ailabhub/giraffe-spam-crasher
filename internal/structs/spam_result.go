@@ -5,7 +5,3 @@ type SpamCheckResult struct {
 	SpamScore float64 `json:"spam_score"`
 	FromCache bool
 }
-
-type SpamClassification struct {
-	SpamScore float64 `json:"spam_score"`
-}
