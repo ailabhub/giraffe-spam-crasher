@@ -15,11 +15,12 @@ import (
 	"github.com/ailabhub/giraffe-spam-crasher/internal/bot"
 	"github.com/ailabhub/giraffe-spam-crasher/internal/history"
 	"github.com/ailabhub/giraffe-spam-crasher/internal/spam/processor"
+	"github.com/ailabhub/giraffe-spam-crasher/internal/structs"
 	"github.com/redis/go-redis/v9"
 )
 
 type AIProvider interface {
-	ProcessMessage(ctx context.Context, message string) (string, error)
+	ProcessMessage(ctx context.Context, message structs.Message) (string, error)
 }
 
 func main() { //nolint:gocyclo,gocognit
@@ -107,45 +108,6 @@ func main() { //nolint:gocyclo,gocognit
 			slog.Info("Total history size", "count", keysCount)
 		}
 	}
-	// Read API key from environment variable
-	var apiKey string
-	var provider AIProvider
-	rateLimit := 0.0
-	switch *apiProvider {
-	case "openai":
-		apiKey = os.Getenv("OPENAI_API_KEY")
-		if apiKey == "" {
-			fmt.Println("OPENAI_API_KEY environment variable is not set")
-			os.Exit(1)
-		}
-		provider = ai.NewOpenAIProvider(apiKey, *model, rateLimit)
-		slog.Info("Using OpenAI API", "model", *model)
-	case "anthropic":
-		apiKey = os.Getenv("ANTHROPIC_API_KEY")
-		if apiKey == "" {
-			fmt.Println("ANTHROPIC_API_KEY environment variable is not set")
-			os.Exit(1)
-		}
-		provider = ai.NewAnthropicProvider(apiKey, *model, rateLimit)
-		slog.Info("Using Anthropic API", "model", *model)
-	case "gemini":
-		apiKey := os.Getenv("GEMINI_API_KEY")
-		if apiKey == "" {
-			slog.Error("GEMINI_API_KEY environment variable is not set")
-			os.Exit(1)
-		}
-
-		geminiProvider, err := ai.NewGeminiProvider(apiKey, *model, rateLimit)
-		if err != nil {
-			slog.Error("Error creating Gemini provider", "error", err)
-			os.Exit(1)
-		}
-		provider = geminiProvider
-		slog.Info("Using Gemini API", "model", *model)
-	default:
-		fmt.Printf("Unsupported API provider: %s\n", *apiProvider)
-		os.Exit(1)
-	}
 	prompt := ""
 	if *promptPath != "" {
 		promptBytes, err := os.ReadFile(*promptPath)
@@ -160,11 +122,49 @@ func main() { //nolint:gocyclo,gocognit
 		os.Exit(1)
 	}
 
-	recordProcessor := ai.NewRecordProcessor(provider, prompt)
-	spamProcessor := processor.NewSpamProcessor(recordProcessor)
-	spamProcessorCache := processor.NewSpamProcessorCache(spamProcessor, rdb)
+	// Read API key from environment variable
+	var apiKey string
+	var provider AIProvider
+	rateLimit := 0.0
+	switch *apiProvider {
+	// case "openai":
+	// 	apiKey = os.Getenv("OPENAI_API_KEY")
+	// 	if apiKey == "" {
+	// 		fmt.Println("OPENAI_API_KEY environment variable is not set")
+	// 		os.Exit(1)
+	// 	}
+	// 	provider = ai.NewOpenAIProvider(apiKey, *model, rateLimit)
+	// 	slog.Info("Using OpenAI API", "model", *model)
+	// case "gemini":
+	// 	apiKey := os.Getenv("GEMINI_API_KEY")
+	// 	if apiKey == "" {
+	// 		slog.Error("GEMINI_API_KEY environment variable is not set")
+	// 		os.Exit(1)
+	// 	}
+	//
+	// 	geminiProvider, err := ai.NewGeminiProvider(apiKey, *model, rateLimit)
+	// 	if err != nil {
+	// 		slog.Error("Error creating Gemini provider", "error", err)
+	// 		os.Exit(1)
+	// 	}
+	// 	provider = geminiProvider
+	// 	slog.Info("Using Gemini API", "model", *model)
+	case "anthropic":
+		apiKey = os.Getenv("ANTHROPIC_API_KEY")
+		if apiKey == "" {
+			fmt.Println("ANTHROPIC_API_KEY environment variable is not set")
+			os.Exit(1)
+		}
+		provider = ai.NewAnthropicProvider(apiKey, *model, rateLimit, prompt)
+		slog.Info("Using Anthropic API", "model", *model)
+	default:
+		fmt.Printf("Unsupported API provider: %s\n", *apiProvider)
+		os.Exit(1)
+	}
 
-	bot, err := bot.New(rdb, spamProcessorCache, &bot.Config{
+	spamProcessor := processor.NewSpamProcessor(provider, rdb)
+
+	bot, err := bot.New(rdb, spamProcessor, &bot.Config{
 		Threshold:         *threshold,
 		NewUserThreshold:  *newUserThreshold,
 		WhitelistChannels: whitelistChannels,

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ailabhub/giraffe-spam-crasher/internal/structs"
 	"golang.org/x/time/rate"
 )
 
@@ -17,9 +18,10 @@ type AnthropicProvider struct {
 	apiKey      string
 	model       string
 	rateLimiter *rate.Limiter
+	prompt      string
 }
 
-func NewAnthropicProvider(apiKey, model string, rateLimit float64) *AnthropicProvider {
+func NewAnthropicProvider(apiKey, model string, rateLimit float64, prompt string) *AnthropicProvider {
 	var limiter *rate.Limiter
 	if rateLimit > 0 {
 		limiter = rate.NewLimiter(rate.Limit(rateLimit), 1)
@@ -31,39 +33,27 @@ func NewAnthropicProvider(apiKey, model string, rateLimit float64) *AnthropicPro
 		apiKey:      apiKey,
 		model:       model,
 		rateLimiter: limiter,
+		prompt:      prompt,
 	}
 }
 
-type AnthropicMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type AnthropicRequest struct {
-	Model     string             `json:"model"`
-	Messages  []AnthropicMessage `json:"messages"`
-	MaxTokens int                `json:"max_tokens"`
-}
-
-type AnthropicResponse struct {
-	Content []struct {
-		Text string `json:"text"`
-	} `json:"content"`
-}
-
-func (p *AnthropicProvider) ProcessMessage(ctx context.Context, message string) (string, error) {
-	err := p.rateLimiter.Wait(ctx) // Wait for rate limit
+func (p *AnthropicProvider) ProcessMessage(ctx context.Context, message structs.Message) (string, error) {
+	err := p.rateLimiter.Wait(ctx)
 	if err != nil {
 		return "", fmt.Errorf("rate limit error: %w", err)
 	}
 
-	requestBody, err := json.Marshal(AnthropicRequest{
-		Model: p.model,
-		Messages: []AnthropicMessage{
-			{Role: "user", Content: message},
-		},
-		MaxTokens: 1000,
-	})
+	anthropicMessage, err := message.ToAnthropicMessage(p.prompt)
+	if err != nil {
+		return "", fmt.Errorf("error converting message to Anthropic format: %w", err)
+	}
+
+	requestBody, err := json.Marshal(
+		structs.AnthropicRequest{
+			Model:     p.model,
+			Messages:  []structs.AnthropicMessage{anthropicMessage},
+			MaxTokens: 1000,
+		})
 	if err != nil {
 		return "", fmt.Errorf("error marshaling request: %w", err)
 	}
@@ -88,7 +78,7 @@ func (p *AnthropicProvider) ProcessMessage(ctx context.Context, message string) 
 		return "", fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	var anthropicResp AnthropicResponse
+	var anthropicResp structs.AnthropicResponse
 	if err := json.NewDecoder(resp.Body).Decode(&anthropicResp); err != nil {
 		return "", fmt.Errorf("error decoding response: %w", err)
 	}
