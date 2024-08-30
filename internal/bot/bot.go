@@ -171,7 +171,7 @@ func (b *Bot) processTelegramMessage(ctx context.Context, telegramMessage *tgbot
 		b.incrementUserMessageCount(telegramMessage)
 		b.forwardMessageToLogChannel(telegramMessage, processed, channelID, processed.SpamScore, false)
 	} else {
-		b.incrementStat(channelID, "spamCount")
+		b.incrementStat(channelID, consts.StatKeySpamCount)
 		b.handleSpamMessage(telegramMessage, channelID, telegramMessage.From.ID, b.checkAdminRights(channelID, b.api.Self.ID), processed.SpamScore)
 	}
 }
@@ -409,7 +409,7 @@ func (b *Bot) sendDailyStats() {
 		}
 
 		message := fmt.Sprintf("📊 Daily Stats for Channel %d\n\n", channelID)
-		spamCount := stats[consts.StatKeySpamCount] + stats[consts.StatKeyCacheHitCount]
+		spamCount := stats[consts.StatKeySpamCount]
 		message += fmt.Sprintf("✉️ Checked: %d \n🚫 Spam: %d (%.1f%%)\n",
 			stats[consts.StatKeyCheckedCount],
 			spamCount,
@@ -435,15 +435,15 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 	}
 
 	if len(tgMessage.Photo) > 0 {
-		// телега дает 3 размера фотографии, от низкого до высокого качества, берем самое высокое качество и ресайзим вручную
-		// TODO? возможно стоит не ресайзить, а брать оригинал низкого качества
-		imageData, err := b.downloadTelegramImage(ctx, tgMessage.Photo[len(tgMessage.Photo)-1])
+		// телега дает 3 размера фотографии в слайсе, от низкого до высокого качества, берем среднее
+		imageData, err := b.downloadTelegramImage(ctx, tgMessage.Photo[1])
 		if err != nil {
 			return structs.Message{}, fmt.Errorf("error downloading image: %w", err)
 		}
 
 		message.Text = tgMessage.Caption
-		message.Images = append(message.Images, imageData)
+		img := structs.Image(imageData)
+		message.Image = &img
 	}
 
 	return message, nil

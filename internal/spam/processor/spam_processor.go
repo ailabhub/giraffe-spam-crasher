@@ -33,16 +33,15 @@ func (s *SpamProcessor) CheckForSpam(ctx context.Context, message structs.Messag
 		spamScore structs.SpamCheckResult
 		err       error
 	)
-	// в теории когда начнем хешить изображения эта штука пропадет
-	if message.Hashable() {
+	if message.Hash() != "" {
 		spamScore, err = s.getFromCache(ctx, message)
 		if err != nil {
 			slog.Error("get from cache", "error", err)
 		}
+	}
 
-		if spamScore.FromCache {
-			return spamScore, nil
-		}
+	if spamScore.FromCache {
+		return spamScore, nil
 	}
 
 	err = retry.Do(
@@ -63,12 +62,12 @@ func (s *SpamProcessor) CheckForSpam(ctx context.Context, message structs.Messag
 		return structs.SpamCheckResult{}, fmt.Errorf("retry.Do: %w", err)
 	}
 
-	if message.Hashable() {
-		cachedData, err := json.Marshal(spamScore)
-		if err != nil {
-			return structs.SpamCheckResult{}, fmt.Errorf("json.Marshal: %w", err)
-		}
+	cachedData, err := json.Marshal(spamScore)
+	if err != nil {
+		return structs.SpamCheckResult{}, fmt.Errorf("json.Marshal: %w", err)
+	}
 
+	if message.Hash() != "" {
 		cacheKey := consts.RedisSpamCacheKey + message.Hash()
 		s.redis.Set(ctx, cacheKey, cachedData, consts.SpamCacheTTL)
 	}
