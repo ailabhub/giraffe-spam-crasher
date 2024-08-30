@@ -10,11 +10,11 @@ type Message struct {
 	// Text of the message
 	Text string
 	// Images attached to the message
-	Images []Image
+	Image *Image
 }
 
-func (m *Message) HasImages() bool {
-	return len(m.Images) > 0
+func (m *Message) HasImage() bool {
+	return m.Image != nil
 }
 
 func (m *Message) HasText() bool {
@@ -32,8 +32,8 @@ func (m *Message) ToAnthropicMessage(prompt string) (AnthropicMessage, error) {
 			Text: prompt,
 		},
 	}
-	for _, img := range m.Images {
-		content = append(content, img.ToAnthropicContent())
+	if m.HasImage() {
+		content = append(content, m.Image.ToAnthropicContent())
 	}
 
 	return AnthropicMessage{
@@ -53,8 +53,8 @@ func (m *Message) Hash() string {
 		hash = hex.EncodeToString(sum256[:])
 	}
 
-	for _, img := range m.Images {
-		sum256 := sha256.Sum256(img)
+	if m.HasImage() {
+		sum256 := sha256.Sum256(*m.Image)
 		imageHash := hex.EncodeToString(sum256[:])
 		hash += imageHash
 	}

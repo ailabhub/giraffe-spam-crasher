@@ -442,7 +442,8 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 		}
 
 		message.Text = tgMessage.Caption
-		message.Images = append(message.Images, imageData)
+		img := structs.Image(imageData)
+		message.Image = &img
 	}
 
 	return message, nil
