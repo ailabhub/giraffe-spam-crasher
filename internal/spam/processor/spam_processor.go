@@ -33,9 +33,11 @@ func (s *SpamProcessor) CheckForSpam(ctx context.Context, message structs.Messag
 		spamScore structs.SpamCheckResult
 		err       error
 	)
-	spamScore, err = s.getFromCache(ctx, message)
-	if err != nil {
-		slog.Error("get from cache", "error", err)
+	if message.Hash() != "" {
+		spamScore, err = s.getFromCache(ctx, message)
+		if err != nil {
+			slog.Error("get from cache", "error", err)
+		}
 	}
 
 	if spamScore.FromCache {
@@ -65,8 +67,10 @@ func (s *SpamProcessor) CheckForSpam(ctx context.Context, message structs.Messag
 		return structs.SpamCheckResult{}, fmt.Errorf("json.Marshal: %w", err)
 	}
 
-	cacheKey := consts.RedisSpamCacheKey + message.Hash()
-	s.redis.Set(ctx, cacheKey, cachedData, consts.SpamCacheTTL)
+	if message.Hash() != "" {
+		cacheKey := consts.RedisSpamCacheKey + message.Hash()
+		s.redis.Set(ctx, cacheKey, cachedData, consts.SpamCacheTTL)
+	}
 
 	return spamScore, nil
 }
