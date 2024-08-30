@@ -3,7 +3,6 @@ package structs
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"strings"
 )
 
@@ -34,11 +33,7 @@ func (m *Message) ToAnthropicMessage(prompt string) (AnthropicMessage, error) {
 		},
 	}
 	for _, img := range m.Images {
-		resizedImage, err := img.Resize(300, 300)
-		if err != nil {
-			return AnthropicMessage{}, fmt.Errorf("error resizing image: %w", err)
-		}
-		content = append(content, resizedImage.ToAnthropicContent())
+		content = append(content, img.ToAnthropicContent())
 	}
 
 	return AnthropicMessage{
@@ -52,6 +47,17 @@ func (m *Message) Hashable() bool {
 }
 
 func (m *Message) Hash() string {
-	hash := sha256.Sum256([]byte(m.Text))
-	return hex.EncodeToString(hash[:])
+	var hash string
+	if m.HasText() {
+		sum256 := sha256.Sum256([]byte(m.Text))
+		hash = hex.EncodeToString(sum256[:])
+	}
+
+	for _, img := range m.Images {
+		sum256 := sha256.Sum256(img)
+		imageHash := hex.EncodeToString(sum256[:])
+		hash += imageHash
+	}
+
+	return hash
 }
