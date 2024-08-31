@@ -229,11 +229,14 @@ func (b *Bot) handleSpamMessage(message *tgbotapi.Message, channelID, userID int
 		}
 	}
 
+	var deletedTime time.Time
+
 	action := "👻 Spam detected and logged"
 	if adminRights.CanDeleteMessages {
 		action = "🤡 Spam detected and deleted"
 		deleteMsg := tgbotapi.NewDeleteMessage(channelID, message.MessageID)
 		_, err := b.api.Request(deleteMsg)
+		deletedTime = time.Now()
 		if err != nil {
 			slog.Error("Failed to delete spam message", "error", err, "messageID", message.MessageID)
 		} else {
@@ -260,7 +263,9 @@ func (b *Bot) handleSpamMessage(message *tgbotapi.Message, channelID, userID int
 	if logChannelID, exists := b.config.LogChannels[channelID]; exists {
 		// Send additional information to the log channel
 		logMessage := fmt.Sprintf(action+"\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f/%.2f", userID, channelID, spamScore, b.config.Threshold)
-		logMessage += fmt.Sprintf("\nTime to delete: %s", formatDuration(time.Now().Sub(time.Unix(int64(message.Date), 0))))
+		if !deletedTime.IsZero() {
+			logMessage += fmt.Sprintf("\nTime to delete: %s", formatDuration(deletedTime.Sub(time.Unix(int64(message.Date), 0))))
+		}
 		logMsg := tgbotapi.NewMessage(logChannelID, logMessage)
 		_, err := b.api.Send(logMsg)
 		if err != nil {
