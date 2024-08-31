@@ -24,9 +24,11 @@ jobs:
       - name: Deploy to Server
         run: |
           ssh -o StrictHostKeyChecking=no -p 222 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
-            cd /home/giraffe-spam-crasher
-            echo "Check deploy!" > deploy.log
+            cd /home/giraffe-spam-crasher           
             echo "Removing old origin and adding new one..." > deploy.log
+            echo "Check deploy!" >> deploy.log            
+            eval (ssh-agent -c) >> deploy.log            
+            ssh-add ~/.ssh/github-actions-key >> deploy.log      
             git remote remove origin >> deploy.log 2>&1
             git remote add origin git@github.com:ailabhub/giraffe-spam-crasher.git >> deploy.log 2>&1
             echo "Pulling latest changes..." >> deploy.log
