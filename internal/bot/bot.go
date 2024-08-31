@@ -86,7 +86,7 @@ func (b *Bot) Start() { //nolint:gocyclo,gocognit
 	}
 
 	for update := range updates {
-		b.handleUpdate(update, &me)
+		go b.handleUpdate(update, &me)
 	}
 }
 
@@ -260,12 +260,18 @@ func (b *Bot) handleSpamMessage(message *tgbotapi.Message, channelID, userID int
 	if logChannelID, exists := b.config.LogChannels[channelID]; exists {
 		// Send additional information to the log channel
 		logMessage := fmt.Sprintf(action+"\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f/%.2f", userID, channelID, spamScore, b.config.Threshold)
+		logMessage += fmt.Sprintf("\nTime to delete: %s", formatDuration(time.Now().Sub(time.Unix(int64(message.Date), 0))))
 		logMsg := tgbotapi.NewMessage(logChannelID, logMessage)
 		_, err := b.api.Send(logMsg)
 		if err != nil {
 			slog.Error("Failed to send log message to log channel", "error", err, "logChannelID", logChannelID)
 		}
 	}
+}
+
+func formatDuration(d time.Duration) string {
+	seconds := float64(d) / float64(time.Second)
+	return fmt.Sprintf("%.1f seconds", seconds)
 }
 
 type AdminRights struct {
