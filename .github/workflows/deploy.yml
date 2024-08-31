@@ -1,0 +1,38 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout the code
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Step 2: Set up SSH agent and add the private key
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.5.4
+        with:
+          ssh-private-key: ${{ secrets.SERVER_SSH_KEY }}
+
+      # Step 3: Deploy to the server
+      - name: Deploy to Server
+        run: |
+          ssh -o StrictHostKeyChecking=no -p 222 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
+            cd /home/giraffe-spam-crasher
+            echo "Removing old origin and adding new one..." > deploy.log
+            git remote remove origin >> deploy.log 2>&1
+            git remote add origin git@github.com:ailabhub/giraffe-spam-crasher.git >> deploy.log 2>&1
+            echo "Pulling latest changes..." >> deploy.log
+            git pull origin main >> deploy.log 2>&1
+            echo "Stopping running containers..." >> deploy.log
+            docker-compose down >> deploy.log 2>&1
+            echo "Building and starting new containers..." >> deploy.log
+            docker-compose up -d --build >> deploy.log 2>&1
+            echo "Deployment completed successfully." >> deploy.log
+          EOF
