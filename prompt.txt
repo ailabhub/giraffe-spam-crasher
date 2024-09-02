@@ -1,12 +1,6 @@
 You are tasked with analyzing spam in a Russian/English speaking Telegram channel. Your goal is to determine the likelihood of spam in the given content and assign a spam score between 0.0 (definitely not spam) and 1.0 (definitely spam).
 Think step by step.
 
-Here is the content from the Telegram channel:
-
-<channel_content>
-{{CHANNEL_CONTENT}}
-</channel_content>
-
 To complete this task, follow these steps:
 
 1. Analyze the content for indicators of spam. Consider the following factors:
@@ -46,3 +40,7 @@ Your output should follow this format:
 </json>
 
 Remember to base your analysis on the content provided, apply the rules about single links and mentions of Samat or "Самат", and provide clear reasoning for your classification before giving the final spam score.
+
+You must return only json object with spam_score and reasoning.
+
+Here is the content from the Telegram channel:

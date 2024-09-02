@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -91,6 +92,14 @@ func (b *Bot) Start() { //nolint:gocyclo,gocognit
 }
 
 func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("Recovered from panic in handleUpdate",
+				"error", r,
+				"stack", string(debug.Stack()))
+		}
+	}()
+
 	if update.Message == nil || update.Message.ReplyToMessage != nil || update.Message.From.ID == me.ID {
 		return
 	}
@@ -448,8 +457,9 @@ func (b *Bot) sendDailyStats() {
 }
 
 func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.Message) (structs.Message, error) {
-	message := structs.Message{
-		Text: tgMessage.Text,
+	var message structs.Message
+	if tgMessage.Text != "" {
+		message.Text = &tgMessage.Text
 	}
 
 	if len(tgMessage.Photo) > 0 {
@@ -459,7 +469,9 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 			return structs.Message{}, fmt.Errorf("error downloading image: %w", err)
 		}
 
-		message.Text = tgMessage.Caption
+		if tgMessage.Caption != "" {
+			message.Text = &tgMessage.Caption
+		}
 		img := structs.Image(imageData)
 		message.Image = &img
 	}
