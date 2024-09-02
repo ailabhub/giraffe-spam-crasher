@@ -4,7 +4,7 @@ package structs
 type AnthropicContent struct {
 	Type   string                `json:"type"`
 	Source *AnthropicImageSource `json:"source,omitempty"`
-	Text   *string               `json:"text,omitempty"`
+	Text   string                `json:"text,omitempty"`
 }
 
 type AnthropicImageSource struct {

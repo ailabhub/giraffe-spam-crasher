@@ -7,7 +7,7 @@ import (
 
 type Message struct {
 	// Text of the message
-	Text *string
+	Text string
 	// Images attached to the message
 	Image *Image
 }
@@ -17,14 +17,14 @@ func (m *Message) HasImage() bool {
 }
 
 func (m *Message) HasText() bool {
-	return m.Text != nil
+	return m.Text != ""
 }
 
 func (m *Message) ToAnthropicMessage(prompt string) (AnthropicMessage, error) {
 	content := []AnthropicContent{
 		{
 			Type: "text",
-			Text: &prompt,
+			Text: prompt,
 		},
 	}
 	if m.HasText() {
@@ -47,7 +47,7 @@ func (m *Message) ToAnthropicMessage(prompt string) (AnthropicMessage, error) {
 func (m *Message) Hash() string {
 	var hash string
 	if m.HasText() {
-		sum256 := sha256.Sum256([]byte(*m.Text))
+		sum256 := sha256.Sum256([]byte(m.Text))
 		hash = hex.EncodeToString(sum256[:])
 	}
 

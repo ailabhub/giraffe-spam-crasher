@@ -457,9 +457,8 @@ func (b *Bot) sendDailyStats() {
 }
 
 func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.Message) (structs.Message, error) {
-	var message structs.Message
-	if tgMessage.Text != "" {
-		message.Text = &tgMessage.Text
+	message := structs.Message{
+		Text: tgMessage.Text,
 	}
 
 	if len(tgMessage.Photo) > 0 {
@@ -469,9 +468,7 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 			return structs.Message{}, fmt.Errorf("error downloading image: %w", err)
 		}
 
-		if tgMessage.Caption != "" {
-			message.Text = &tgMessage.Caption
-		}
+		message.Text = tgMessage.Caption
 		img := structs.Image(imageData)
 		message.Image = &img
 	}
