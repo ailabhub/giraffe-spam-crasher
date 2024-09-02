@@ -183,7 +183,7 @@ func (b *Bot) processTelegramMessage(ctx context.Context, telegramMessage *tgbot
 		b.forwardMessageToLogChannel(telegramMessage, processed, channelID, processed.SpamScore, false)
 	} else {
 		b.incrementStat(channelID, consts.StatKeySpamCount)
-		b.handleSpamMessage(telegramMessage, channelID, telegramMessage.From.ID, b.checkAdminRights(channelID, b.api.Self.ID), processed.SpamScore, receivedAt)
+		b.handleSpamMessage(telegramMessage, channelID, telegramMessage.From.ID, b.checkAdminRights(channelID, b.api.Self.ID), processed, receivedAt)
 	}
 }
 
@@ -228,15 +228,17 @@ func (b *Bot) forwardMessageToLogChannel(message *tgbotapi.Message, processed st
 	}
 }
 
-func (b *Bot) handleSpamMessage(message *tgbotapi.Message, channelID, userID int64, adminRights AdminRights, spamScore float64, receivedAt time.Time) {
-	// Forward the message to the log channel
-	if logChannelID, exists := b.config.LogChannels[channelID]; exists {
-		forwardMsg := tgbotapi.NewForward(logChannelID, channelID, message.MessageID)
-		_, err := b.api.Send(forwardMsg)
-		if err != nil {
-			slog.Error("Failed to forward spam message to log channel", "error", err, "messageID", message.MessageID, "logChannelID", logChannelID)
-		} else {
-			slog.Info("Forwarded spam message to log channel", "messageID", message.MessageID, "userID", userID, "channelID", channelID, "logChannelID", logChannelID)
+func (b *Bot) handleSpamMessage(message *tgbotapi.Message, channelID, userID int64, adminRights AdminRights, processed structs.SpamCheckResult, receivedAt time.Time) {
+	// отправляем в лог канал только если сообщение не из кеша
+	if !processed.FromCache {
+		if logChannelID, exists := b.config.LogChannels[channelID]; exists {
+			forwardMsg := tgbotapi.NewForward(logChannelID, channelID, message.MessageID)
+			_, err := b.api.Send(forwardMsg)
+			if err != nil {
+				slog.Error("Failed to forward spam message to log channel", "error", err, "messageID", message.MessageID, "logChannelID", logChannelID)
+			} else {
+				slog.Info("Forwarded spam message to log channel", "messageID", message.MessageID, "userID", userID, "channelID", channelID, "logChannelID", logChannelID)
+			}
 		}
 	}
 
@@ -271,21 +273,24 @@ func (b *Bot) handleSpamMessage(message *tgbotapi.Message, channelID, userID int
 		}
 	}
 
-	if logChannelID, exists := b.config.LogChannels[channelID]; exists {
-		// Send additional information to the log channel
-		logMessage := fmt.Sprintf(action+"\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f/%.2f", userID, channelID, spamScore, b.config.Threshold)
-		if !deletedTime.IsZero() {
+	// отправляем в лог канал только если сообщение не из кеша
+	if !processed.FromCache {
+		if logChannelID, exists := b.config.LogChannels[channelID]; exists {
+			// Send additional information to the log channel
+			logMessage := fmt.Sprintf(action+"\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f/%.2f", userID, channelID, processed.SpamScore, b.config.Threshold)
+			if !deletedTime.IsZero() {
 
-			logMessage += fmt.Sprintf(
-				"\nTime to delete: %s/%s seconds",
-				formatDuration(receivedAt.UTC().Sub(time.Unix(int64(message.Date), 0))),
-				formatDuration(deletedTime.UTC().Sub(time.Unix(int64(message.Date), 0))),
-			)
-		}
-		logMsg := tgbotapi.NewMessage(logChannelID, logMessage)
-		_, err := b.api.Send(logMsg)
-		if err != nil {
-			slog.Error("Failed to send log message to log channel", "error", err, "logChannelID", logChannelID)
+				logMessage += fmt.Sprintf(
+					"\nTime to delete: %s/%s seconds",
+					formatDuration(receivedAt.UTC().Sub(time.Unix(int64(message.Date), 0))),
+					formatDuration(deletedTime.UTC().Sub(time.Unix(int64(message.Date), 0))),
+				)
+			}
+			logMsg := tgbotapi.NewMessage(logChannelID, logMessage)
+			_, err := b.api.Send(logMsg)
+			if err != nil {
+				slog.Error("Failed to send log message to log channel", "error", err, "logChannelID", logChannelID)
+			}
 		}
 	}
 }
@@ -396,17 +401,6 @@ func (b *Bot) resetStats(channelID int64) {
 }
 
 func (b *Bot) runDailyStatsReporting() {
-	// ticker := time.NewTicker(1 * time.Hour)
-	// defer ticker.Stop()
-
-	// for {
-	// 	select {
-	// 	case <-ticker.C:
-	// 		b.sendDailyStats()
-	// 	case <-b.stopChan:
-	// 		return
-	// 	}
-	// }
 	const targetHour = 14 // 1 PM UTC
 	for {
 		now := time.Now().UTC()
