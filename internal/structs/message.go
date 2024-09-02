@@ -3,7 +3,6 @@ package structs
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"strings"
 )
 
 type Message struct {
@@ -22,16 +21,19 @@ func (m *Message) HasText() bool {
 }
 
 func (m *Message) ToAnthropicMessage(prompt string) (AnthropicMessage, error) {
-	if m.Text != "" {
-		prompt = strings.ReplaceAll(prompt, "{{CHANNEL_CONTENT}}", m.Text)
-	}
-
 	content := []AnthropicContent{
 		{
 			Type: "text",
 			Text: prompt,
 		},
 	}
+	if m.HasText() {
+		content = append(content, AnthropicContent{
+			Type: "text",
+			Text: m.Text,
+		})
+	}
+
 	if m.HasImage() {
 		content = append(content, m.Image.ToAnthropicContent())
 	}
@@ -40,10 +42,6 @@ func (m *Message) ToAnthropicMessage(prompt string) (AnthropicMessage, error) {
 		Role:    "user",
 		Content: content,
 	}, nil
-}
-
-func (m *Message) Hashable() bool {
-	return m.Text != ""
 }
 
 func (m *Message) Hash() string {

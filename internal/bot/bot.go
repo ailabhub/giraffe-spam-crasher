@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -91,6 +92,14 @@ func (b *Bot) Start() { //nolint:gocyclo,gocognit
 }
 
 func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("Recovered from panic in handleUpdate",
+				"error", r,
+				"stack", string(debug.Stack()))
+		}
+	}()
+
 	if update.Message == nil || update.Message.ReplyToMessage != nil || update.Message.From.ID == me.ID {
 		return
 	}

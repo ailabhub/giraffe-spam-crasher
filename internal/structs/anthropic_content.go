@@ -28,4 +28,12 @@ type AnthropicResponse struct {
 	Content []struct {
 		Text string `json:"text"`
 	} `json:"content"`
+	AntropicResponseUsage AntropicResponseUsage `json:"usage"`
+}
+
+type AntropicResponseUsage struct {
+	InputTokens              int64 `json:"input_tokens"`
+	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+	OutputTokens             int64 `json:"output_tokens"`
 }
