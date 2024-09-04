@@ -3,13 +3,19 @@ package structs
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"time"
 )
 
 type Message struct {
 	// Text of the message
 	Text string
 	// Images attached to the message
-	Image *Image
+	Image       *Image
+	ChannelID   int64
+	MessageID   int64
+	UserID      int64
+	ReceivedAt  time.Time
+	MessageTime time.Time
 }
 
 func (m *Message) HasImage() bool {

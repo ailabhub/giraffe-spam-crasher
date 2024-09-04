@@ -37,7 +37,7 @@ func NewAnthropicProvider(apiKey, model string, rateLimit float64, prompt string
 	}
 }
 
-func (p *AnthropicProvider) ProcessMessage(ctx context.Context, message structs.Message) (string, error) {
+func (p *AnthropicProvider) ProcessMessage(ctx context.Context, message *structs.Message) (string, error) {
 	err := p.rateLimiter.Wait(ctx)
 	if err != nil {
 		return "", fmt.Errorf("rate limit error: %w", err)

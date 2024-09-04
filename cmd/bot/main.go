@@ -20,7 +20,7 @@ import (
 )
 
 type AIProvider interface {
-	ProcessMessage(ctx context.Context, message structs.Message) (string, error)
+	ProcessMessage(ctx context.Context, message *structs.Message) (string, error)
 }
 
 func main() { //nolint:gocyclo,gocognit

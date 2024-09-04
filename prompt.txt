@@ -31,13 +31,10 @@ To complete this task, follow these steps:
    - 0.5 indicates uncertainty or equal likelihood of being spam or not spam
    - 1.0 indicates definitely spam
 
-5. Output your result in JSON format with key "spam_score" and the corresponding float value between 0.0 and 1.0. Round the score to two decimal places. Enclose the JSON output in <json> tags.
+5. Output your result in JSON format with key "spam_score" and the corresponding float value between 0.0 and 1.0. Round the score to two decimal places.
 
 Your output should follow this format:
-
-<json>
 {"spam_score": 0.00, "reasoning": "[Your reasoning here]"}
-</json>
 
 Remember to base your analysis on the content provided, apply the rules about single links and mentions of Samat or "Самат", and provide clear reasoning for your classification before giving the final spam score.
 

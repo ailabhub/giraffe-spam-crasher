@@ -19,7 +19,7 @@ import (
 )
 
 type SpamProcessor interface {
-	CheckForSpam(ctx context.Context, message structs.Message) (structs.SpamCheckResult, error)
+	CheckForSpam(ctx context.Context, message *structs.Message) (structs.SpamCheckResult, error)
 }
 
 type Bot struct {
@@ -104,30 +104,33 @@ func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
 		return
 	}
 
-	receivedAt := time.Now()
-
-	channelID := update.Message.Chat.ID
 	ctx := context.Background()
 
-	if b.isSelfMessage(update.Message, channelID) {
+	message, err := b.fromTGToInternalMessage(ctx, update.Message)
+	if err != nil {
+		slog.Error("Error converting message", "error", err)
+		return
+	}
+
+	if b.isSelfMessage(&message) {
 		b.sendSelfMessageWarning(update.Message)
 		return
 	}
 
-	if !b.isWhitelistedChannel(channelID) {
-		slog.Debug("Skipping non-whitelisted channel", "channelID", channelID)
+	if !b.isWhitelistedChannel(message.ChannelID) {
+		slog.Debug("Skipping non-whitelisted channel", "channelID", message.ChannelID)
 		return
 	}
 
-	if b.isNewUser(ctx, update.Message) {
-		b.incrementStat(channelID, consts.StatKeyCheckedCount)
-		b.processTelegramMessage(ctx, update.Message, receivedAt)
+	if b.isNewUser(ctx, &message) {
+		b.incrementStat(message.ChannelID, consts.StatKeyCheckedCount)
+		b.processTelegramMessage(ctx, &message)
 	}
 }
 
-func (b *Bot) isSelfMessage(message *tgbotapi.Message, channelID int64) bool {
-	userID := message.From.ID
-	return userID == channelID && !b.whitelistChannels[channelID]
+func (b *Bot) isSelfMessage(message *structs.Message) bool {
+	userID := message.UserID
+	return userID == message.ChannelID && !b.whitelistChannels[message.ChannelID]
 }
 
 func (b *Bot) sendSelfMessageWarning(message *tgbotapi.Message) {
@@ -142,9 +145,9 @@ func (b *Bot) isWhitelistedChannel(channelID int64) bool {
 	return len(b.whitelistChannels) == 0 || b.whitelistChannels[channelID]
 }
 
-func (b *Bot) isNewUser(ctx context.Context, message *tgbotapi.Message) bool {
-	channelID := message.Chat.ID
-	key := fmt.Sprintf("%d:%d", message.From.ID, channelID)
+func (b *Bot) isNewUser(ctx context.Context, message *structs.Message) bool {
+	channelID := message.ChannelID
+	key := fmt.Sprintf("%d:%d", message.UserID, channelID)
 	count, err := b.redis.Get(ctx, key).Int()
 	if err != nil && !errors.Is(err, redis.Nil) {
 		slog.Error("Error retrieving count from Redis", "error", err)
@@ -153,37 +156,39 @@ func (b *Bot) isNewUser(ctx context.Context, message *tgbotapi.Message) bool {
 	return count < b.config.NewUserThreshold
 }
 
-func (b *Bot) processTelegramMessage(ctx context.Context, telegramMessage *tgbotapi.Message, receivedAt time.Time) {
+func (b *Bot) processTelegramMessage(ctx context.Context, message *structs.Message) {
 	var processed structs.SpamCheckResult
 
-	channelID := telegramMessage.Chat.ID
-
-	message, err := b.fromTGToInternalMessage(ctx, telegramMessage)
-	if err != nil {
-		slog.Error("Error converting message", "error", err)
-		return
-	}
-
-	processed, err = b.spamProcessor.CheckForSpam(ctx, message)
+	processed, err := b.spamProcessor.CheckForSpam(ctx, message)
 	if err != nil {
 		slog.Error("Error checking for spam after retries", "error", err)
 		return
 	}
 
 	if processed.FromCache {
-		b.incrementStat(channelID, consts.StatKeyCacheHitCount)
+		b.incrementStat(message.ChannelID, consts.StatKeyCacheHitCount)
 	} else {
-		b.incrementStat(channelID, consts.StatKeyAiCheckedCount)
+		b.incrementStat(message.ChannelID, consts.StatKeyAiCheckedCount)
 	}
 
-	slog.Debug("Spam check result", "userID", telegramMessage.From.ID, "channelID", telegramMessage, "spamScore", processed.SpamScore, "reasoning", processed.Reasoning)
+	slog.Debug(
+		"Spam check result",
+		"userID",
+		message.UserID,
+		"channelID",
+		message.ChannelID,
+		"spamScore",
+		processed.SpamScore,
+		"reasoning",
+		processed.Reasoning,
+	)
 
 	if processed.SpamScore <= b.config.Threshold {
-		b.incrementUserMessageCount(telegramMessage)
-		b.forwardMessageToLogChannel(telegramMessage, processed, channelID, processed.SpamScore, false)
+		b.incrementUserMessageCount(message)
+		b.forwardMessageToLogChannel(message, processed, false)
 	} else {
-		b.incrementStat(channelID, consts.StatKeySpamCount)
-		b.handleSpamMessage(telegramMessage, channelID, telegramMessage.From.ID, b.checkAdminRights(channelID, b.api.Self.ID), processed, receivedAt)
+		b.incrementStat(message.ChannelID, consts.StatKeySpamCount)
+		b.handleSpamMessage(message, b.checkAdminRights(message.ChannelID, b.api.Self.ID), processed)
 	}
 }
 
@@ -198,18 +203,18 @@ func (b *Bot) downloadImage(url string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
-func (b *Bot) incrementUserMessageCount(message *tgbotapi.Message) {
+func (b *Bot) incrementUserMessageCount(message *structs.Message) {
 	ctx := context.Background()
-	channelID := message.Chat.ID
-	key := fmt.Sprintf("%d:%d", message.From.ID, channelID)
+	channelID := message.ChannelID
+	key := fmt.Sprintf("%d:%d", message.UserID, channelID)
 	if _, err := b.redis.Incr(ctx, key).Result(); err != nil {
 		slog.Error("Error incrementing count in Redis", "error", err)
 	}
 }
 
-func (b *Bot) forwardMessageToLogChannel(message *tgbotapi.Message, processed structs.SpamCheckResult, channelID int64, spamScore float64, isSpam bool) {
-	if logChannelID, exists := b.config.LogChannels[channelID]; exists {
-		forwardMsg := tgbotapi.NewForward(logChannelID, channelID, message.MessageID)
+func (b *Bot) forwardMessageToLogChannel(message *structs.Message, processed structs.SpamCheckResult, isSpam bool) {
+	if logChannelID, exists := b.config.LogChannels[message.ChannelID]; exists {
+		forwardMsg := tgbotapi.NewForward(logChannelID, message.ChannelID, int(message.MessageID))
 		if _, err := b.api.Send(forwardMsg); err != nil {
 			slog.Error("Failed to forward message to log channel", "error", err, "messageID", message.MessageID, "logChannelID", logChannelID)
 		}
@@ -219,7 +224,7 @@ func (b *Bot) forwardMessageToLogChannel(message *tgbotapi.Message, processed st
 			action = "🤡 Spam detected and deleted"
 		}
 
-		logMessage := fmt.Sprintf("%s:\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f / %.2f \nReasoning: \n%s", action, message.From.ID, channelID, spamScore, b.config.Threshold, processed.Reasoning)
+		logMessage := fmt.Sprintf("%s:\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f / %.2f \nReasoning: \n%s", action, message.UserID, message.ChannelID, processed.SpamScore, b.config.Threshold, processed.Reasoning)
 
 		logMsg := tgbotapi.NewMessage(logChannelID, logMessage)
 		if _, err := b.api.Send(logMsg); err != nil {
@@ -228,16 +233,16 @@ func (b *Bot) forwardMessageToLogChannel(message *tgbotapi.Message, processed st
 	}
 }
 
-func (b *Bot) handleSpamMessage(message *tgbotapi.Message, channelID, userID int64, adminRights AdminRights, processed structs.SpamCheckResult, receivedAt time.Time) {
+func (b *Bot) handleSpamMessage(message *structs.Message, adminRights AdminRights, processed structs.SpamCheckResult) {
 	// отправляем в лог канал только если сообщение не из кеша
 	if !processed.FromCache {
-		if logChannelID, exists := b.config.LogChannels[channelID]; exists {
-			forwardMsg := tgbotapi.NewForward(logChannelID, channelID, message.MessageID)
+		if logChannelID, exists := b.config.LogChannels[message.ChannelID]; exists {
+			forwardMsg := tgbotapi.NewForward(logChannelID, message.ChannelID, int(message.MessageID))
 			_, err := b.api.Send(forwardMsg)
 			if err != nil {
 				slog.Error("Failed to forward spam message to log channel", "error", err, "messageID", message.MessageID, "logChannelID", logChannelID)
 			} else {
-				slog.Info("Forwarded spam message to log channel", "messageID", message.MessageID, "userID", userID, "channelID", channelID, "logChannelID", logChannelID)
+				slog.Info("Forwarded spam message to log channel", "messageID", message.MessageID, "userID", message.UserID, "channelID", message.ChannelID, "logChannelID", logChannelID)
 			}
 		}
 	}
@@ -247,13 +252,13 @@ func (b *Bot) handleSpamMessage(message *tgbotapi.Message, channelID, userID int
 	action := "👻 Spam detected and logged"
 	if adminRights.CanDeleteMessages {
 		action = "🤡 Spam detected and deleted"
-		deleteMsg := tgbotapi.NewDeleteMessage(channelID, message.MessageID)
+		deleteMsg := tgbotapi.NewDeleteMessage(message.ChannelID, int(message.MessageID))
 		_, err := b.api.Request(deleteMsg)
 		deletedTime = time.Now()
 		if err != nil {
 			slog.Error("Failed to delete spam message", "error", err, "messageID", message.MessageID)
 		} else {
-			slog.Info("Deleted spam message", "messageID", message.MessageID, "userID", userID, "channelID", channelID)
+			slog.Info("Deleted spam message", "messageID", message.MessageID, "userID", message.UserID, "channelID", message.ChannelID)
 		}
 	}
 
@@ -261,29 +266,29 @@ func (b *Bot) handleSpamMessage(message *tgbotapi.Message, channelID, userID int
 		action += "\n👩‍⚖️User banned"
 		restrictConfig := tgbotapi.RestrictChatMemberConfig{
 			ChatMemberConfig: tgbotapi.ChatMemberConfig{
-				ChatID: channelID,
-				UserID: userID,
+				ChatID: message.ChannelID,
+				UserID: message.UserID,
 			},
 		}
 		_, err := b.api.Request(restrictConfig)
 		if err != nil {
-			slog.Error("Failed to restrict user", "error", err, "userID", userID, "channelID", channelID)
+			slog.Error("Failed to restrict user", "error", err, "userID", message.UserID, "channelID", message.ChannelID)
 		} else {
-			slog.Info("Restricted user", "userID", userID, "channelID", channelID)
+			slog.Info("Restricted user", "userID", message.UserID, "channelID", message.ChannelID)
 		}
 	}
 
 	// отправляем в лог канал только если сообщение не из кеша
 	if !processed.FromCache {
-		if logChannelID, exists := b.config.LogChannels[channelID]; exists {
+		if logChannelID, exists := b.config.LogChannels[message.ChannelID]; exists {
 			// Send additional information to the log channel
-			logMessage := fmt.Sprintf(action+"\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f/%.2f", userID, channelID, processed.SpamScore, b.config.Threshold)
+			logMessage := fmt.Sprintf(action+"\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f/%.2f", message.UserID, message.ChannelID, processed.SpamScore, b.config.Threshold)
 			if !deletedTime.IsZero() {
 
 				logMessage += fmt.Sprintf(
 					"\nTime to delete: %s/%s seconds",
-					formatDuration(receivedAt.UTC().Sub(time.Unix(int64(message.Date), 0))),
-					formatDuration(deletedTime.UTC().Sub(time.Unix(int64(message.Date), 0))),
+					formatDuration(message.ReceivedAt.UTC().Sub(message.MessageTime)),
+					formatDuration(deletedTime.UTC().Sub(message.MessageTime)),
 				)
 			}
 			logMsg := tgbotapi.NewMessage(logChannelID, logMessage)
@@ -452,7 +457,12 @@ func (b *Bot) sendDailyStats() {
 
 func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.Message) (structs.Message, error) {
 	message := structs.Message{
-		Text: tgMessage.Text,
+		Text:        tgMessage.Text,
+		ChannelID:   tgMessage.Chat.ID,
+		MessageID:   int64(tgMessage.MessageID),
+		UserID:      tgMessage.From.ID,
+		ReceivedAt:  time.Now().UTC(),
+		MessageTime: time.Unix(int64(tgMessage.Date), 0).UTC(),
 	}
 
 	if len(tgMessage.Photo) > 0 {
