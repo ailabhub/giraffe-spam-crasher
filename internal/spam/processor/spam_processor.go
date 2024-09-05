@@ -28,7 +28,7 @@ func NewSpamProcessor(
 	}
 }
 
-func (s *SpamProcessor) CheckForSpam(ctx context.Context, message structs.Message) (structs.SpamCheckResult, error) {
+func (s *SpamProcessor) CheckForSpam(ctx context.Context, message *structs.Message) (structs.SpamCheckResult, error) {
 	var (
 		spamScore structs.SpamCheckResult
 		err       error
@@ -75,7 +75,7 @@ func (s *SpamProcessor) CheckForSpam(ctx context.Context, message structs.Messag
 	return spamScore, nil
 }
 
-func (s *SpamProcessor) getFromCache(ctx context.Context, message structs.Message) (structs.SpamCheckResult, error) {
+func (s *SpamProcessor) getFromCache(ctx context.Context, message *structs.Message) (structs.SpamCheckResult, error) {
 	cacheKey := consts.RedisSpamCacheKey + message.Hash()
 	cachedResult, err := s.redis.Get(ctx, cacheKey).Result()
 	if err != nil {
