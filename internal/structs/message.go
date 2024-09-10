@@ -12,8 +12,10 @@ type Message struct {
 	// Images attached to the message
 	Image       *Image
 	ChannelID   int64
+	ChannelName string
 	MessageID   int64
 	UserID      int64
+	UserName    string
 	ReceivedAt  time.Time
 	MessageTime time.Time
 }
