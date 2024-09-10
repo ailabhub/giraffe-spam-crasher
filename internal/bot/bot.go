@@ -284,7 +284,7 @@ func (b *Bot) handleSpamMessage(message *structs.Message, adminRights AdminRight
 	if !processed.FromCache || userWasRestricted {
 		if logChannelID, exists := b.config.LogChannels[message.ChannelID]; exists {
 			// Send additional information to the log channel
-			logMessage := fmt.Sprintf(action+"\nUser: %s\nChannel: %d\nSpam Score: %.2f/%.2f", message.UserName, message.ChannelName, processed.SpamScore, b.config.Threshold)
+			logMessage := fmt.Sprintf(action+"\nUser: %s\nChannel: %s\nSpam Score: %.2f/%.2f", message.UserName, message.ChannelName, processed.SpamScore, b.config.Threshold)
 			if !deletedTime.IsZero() {
 
 				logMessage += fmt.Sprintf(
@@ -464,7 +464,7 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 		ChannelName: tgMessage.Chat.Title,
 		MessageID:   int64(tgMessage.MessageID),
 		UserID:      tgMessage.From.ID,
-		UserName:    tgMessage.From.FirstName + " " + tgMessage.From.LastName + "(" + tgMessage.From.UserName + ")",
+		UserName:    tgMessage.From.FirstName + " (@" + tgMessage.From.UserName + ")",
 		ReceivedAt:  time.Now().UTC(),
 		MessageTime: time.Unix(int64(tgMessage.Date), 0).UTC(),
 	}
