@@ -234,6 +234,8 @@ func (b *Bot) forwardMessageToLogChannel(message *structs.Message, processed str
 }
 
 func (b *Bot) handleSpamMessage(message *structs.Message, adminRights AdminRights, processed structs.SpamCheckResult) {
+	action := "👻 Spam detected and logged"
+
 	// отправляем в лог канал только если сообщение не из кеша
 	if !processed.FromCache {
 		if logChannelID, exists := b.config.LogChannels[message.ChannelID]; exists {
@@ -249,7 +251,6 @@ func (b *Bot) handleSpamMessage(message *structs.Message, adminRights AdminRight
 
 	var deletedTime time.Time
 
-	action := "👻 Spam detected and logged"
 	if adminRights.CanDeleteMessages {
 		action = "🤡 Spam detected and deleted"
 		deleteMsg := tgbotapi.NewDeleteMessage(message.ChannelID, int(message.MessageID))
@@ -261,9 +262,8 @@ func (b *Bot) handleSpamMessage(message *structs.Message, adminRights AdminRight
 			slog.Info("Deleted spam message", "messageID", message.MessageID, "userID", message.UserID, "channelID", message.ChannelID)
 		}
 	}
-
-	if adminRights.CanRestrictMembers {
-		action += "\n👩‍⚖️User banned"
+	userWasRestricted := false
+	if processed.FromCache && adminRights.CanRestrictMembers {
 		restrictConfig := tgbotapi.RestrictChatMemberConfig{
 			ChatMemberConfig: tgbotapi.ChatMemberConfig{
 				ChatID: message.ChannelID,
@@ -275,14 +275,16 @@ func (b *Bot) handleSpamMessage(message *structs.Message, adminRights AdminRight
 			slog.Error("Failed to restrict user", "error", err, "userID", message.UserID, "channelID", message.ChannelID)
 		} else {
 			slog.Info("Restricted user", "userID", message.UserID, "channelID", message.ChannelID)
+			userWasRestricted = true
+			action += "\n👩‍⚖️User banned"
 		}
 	}
 
-	// отправляем в лог канал только если сообщение не из кеша
-	if !processed.FromCache {
+	// отправляем в лог канал только если сообщение не из кеша или если юзер был забанен
+	if !processed.FromCache || userWasRestricted {
 		if logChannelID, exists := b.config.LogChannels[message.ChannelID]; exists {
 			// Send additional information to the log channel
-			logMessage := fmt.Sprintf(action+"\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f/%.2f", message.UserID, message.ChannelID, processed.SpamScore, b.config.Threshold)
+			logMessage := fmt.Sprintf(action+"\nUser: %s\nChannel: %d\nSpam Score: %.2f/%.2f", message.UserName, message.ChannelName, processed.SpamScore, b.config.Threshold)
 			if !deletedTime.IsZero() {
 
 				logMessage += fmt.Sprintf(
@@ -459,8 +461,10 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 	message := structs.Message{
 		Text:        tgMessage.Text,
 		ChannelID:   tgMessage.Chat.ID,
+		ChannelName: tgMessage.Chat.Title,
 		MessageID:   int64(tgMessage.MessageID),
 		UserID:      tgMessage.From.ID,
+		UserName:    tgMessage.From.FirstName + " " + tgMessage.From.LastName + "(" + tgMessage.From.UserName + ")",
 		ReceivedAt:  time.Now().UTC(),
 		MessageTime: time.Unix(int64(tgMessage.Date), 0).UTC(),
 	}
