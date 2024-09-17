@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"time"
 
+	"log/slog"
+
 	"github.com/ailabhub/giraffe-spam-crasher/internal/structs"
 	"golang.org/x/time/rate"
 )
@@ -19,9 +21,10 @@ type AnthropicProvider struct {
 	model       string
 	rateLimiter *rate.Limiter
 	prompt      string
+	logger      *slog.Logger
 }
 
-func NewAnthropicProvider(apiKey, model string, rateLimit float64, prompt string) *AnthropicProvider {
+func NewAnthropicProvider(apiKey, model string, rateLimit float64, prompt string, logger *slog.Logger) *AnthropicProvider {
 	var limiter *rate.Limiter
 	if rateLimit > 0 {
 		limiter = rate.NewLimiter(rate.Limit(rateLimit), 1)
@@ -34,6 +37,7 @@ func NewAnthropicProvider(apiKey, model string, rateLimit float64, prompt string
 		model:       model,
 		rateLimiter: limiter,
 		prompt:      prompt,
+		logger:      logger,
 	}
 }
 
@@ -58,6 +62,9 @@ func (p *AnthropicProvider) ProcessMessage(ctx context.Context, message *structs
 		return "", fmt.Errorf("error marshaling request: %w", err)
 	}
 
+	// Log raw request
+	p.logger.Debug("Raw Anthropic API request", "body", string(requestBody))
+
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.anthropic.com/v1/messages", bytes.NewBuffer(requestBody))
 	if err != nil {
 		return "", fmt.Errorf("error creating request: %w", err)
@@ -73,9 +80,18 @@ func (p *AnthropicProvider) ProcessMessage(ctx context.Context, message *structs
 	}
 	defer resp.Body.Close()
 
+	// Read and log raw response
+	rawBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("error reading response body: %w", err)
+	}
+	p.logger.Debug("Raw Anthropic API response", "status", resp.Status, "body", string(rawBody))
+
+	// Recreate a new reader for further processing
+	resp.Body = io.NopCloser(bytes.NewReader(rawBody))
+
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(rawBody))
 	}
 
 	var anthropicResp structs.AnthropicResponse
