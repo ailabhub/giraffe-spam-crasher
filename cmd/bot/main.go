@@ -155,7 +155,7 @@ func main() { //nolint:gocyclo,gocognit
 			fmt.Println("ANTHROPIC_API_KEY environment variable is not set")
 			os.Exit(1)
 		}
-		provider = ai.NewAnthropicProvider(apiKey, *model, rateLimit, prompt)
+		provider = ai.NewAnthropicProvider(apiKey, *model, rateLimit, prompt, logger)
 		slog.Info("Using Anthropic API", "model", *model)
 	default:
 		fmt.Printf("Unsupported API provider: %s\n", *apiProvider)
@@ -169,7 +169,7 @@ func main() { //nolint:gocyclo,gocognit
 		NewUserThreshold:  *newUserThreshold,
 		WhitelistChannels: whitelistChannels,
 		LogChannels:       logChannels,
-	})
+	}, logger)
 
 	if err != nil {
 		slog.Error("Failed to create bot", "error", err)
