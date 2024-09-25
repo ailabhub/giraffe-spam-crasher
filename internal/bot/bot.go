@@ -19,7 +19,7 @@ import (
 )
 
 type SpamProcessor interface {
-	CheckForSpam(ctx context.Context, message *structs.Message) (structs.SpamCheckResult, error)
+	CheckForSpam(ctx context.Context, message *structs.Message, useCache bool) (structs.SpamCheckResult, error)
 }
 
 type Bot struct {
@@ -124,9 +124,10 @@ func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
 		return
 	}
 
-	if b.isNewUser(ctx, &message) {
+	privateMessage := message.UserID == message.ChannelID
+	if b.isNewUser(ctx, &message) || privateMessage {
 		b.incrementStat(message.ChannelID, consts.StatKeyCheckedCount)
-		b.processTelegramMessage(ctx, &message)
+		b.processTelegramMessage(ctx, &message, privateMessage)
 	}
 }
 
@@ -158,10 +159,10 @@ func (b *Bot) isNewUser(ctx context.Context, message *structs.Message) bool {
 	return count < b.config.NewUserThreshold
 }
 
-func (b *Bot) processTelegramMessage(ctx context.Context, message *structs.Message) {
+func (b *Bot) processTelegramMessage(ctx context.Context, message *structs.Message, privateMessage bool) {
 	var processed structs.SpamCheckResult
 
-	processed, err := b.spamProcessor.CheckForSpam(ctx, message)
+	processed, err := b.spamProcessor.CheckForSpam(ctx, message, !privateMessage)
 	if err != nil {
 		b.logger.Error("Error checking for spam after retries", "error", err)
 		return
@@ -185,6 +186,10 @@ func (b *Bot) processTelegramMessage(ctx context.Context, message *structs.Messa
 		processed.Reasoning,
 	)
 
+	if privateMessage {
+		b.sendCheckResultMessage("Checked", message, processed, time.Time{}, message.ChannelID)
+		return
+	}
 	if processed.SpamScore <= b.config.Threshold {
 		b.incrementUserMessageCount(message)
 		b.forwardMessageToLogChannel(message, processed, false)
@@ -214,6 +219,23 @@ func (b *Bot) incrementUserMessageCount(message *structs.Message) {
 	}
 }
 
+func (b *Bot) sendCheckResultMessage(action string, message *structs.Message, processed structs.SpamCheckResult, deletedTime time.Time, channelID int64) {
+	logMessage := fmt.Sprintf("%s:\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f / %.2f \nReasoning: \n%s", action, message.UserID, message.ChannelID, processed.SpamScore, b.config.Threshold, processed.Reasoning)
+	if !deletedTime.IsZero() {
+
+		logMessage += fmt.Sprintf(
+			"\nTime to delete: %s/%s seconds",
+			formatDuration(message.ReceivedAt.UTC().Sub(message.MessageTime)),
+			formatDuration(deletedTime.UTC().Sub(message.MessageTime)),
+		)
+	}
+
+	logMsg := tgbotapi.NewMessage(channelID, logMessage)
+	if _, err := b.api.Send(logMsg); err != nil {
+		b.logger.Error("Failed to send log message to log channel", "error", err, "channelID", channelID)
+	}
+}
+
 func (b *Bot) forwardMessageToLogChannel(message *structs.Message, processed structs.SpamCheckResult, isSpam bool) {
 	if logChannelID, exists := b.config.LogChannels[message.ChannelID]; exists {
 		forwardMsg := tgbotapi.NewForward(logChannelID, message.ChannelID, int(message.MessageID))
@@ -226,12 +248,7 @@ func (b *Bot) forwardMessageToLogChannel(message *structs.Message, processed str
 			action = "🤡 Spam detected and deleted"
 		}
 
-		logMessage := fmt.Sprintf("%s:\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f / %.2f \nReasoning: \n%s", action, message.UserID, message.ChannelID, processed.SpamScore, b.config.Threshold, processed.Reasoning)
-
-		logMsg := tgbotapi.NewMessage(logChannelID, logMessage)
-		if _, err := b.api.Send(logMsg); err != nil {
-			b.logger.Error("Failed to send log message to log channel", "error", err, "logChannelID", logChannelID)
-		}
+		b.sendCheckResultMessage(action, message, processed, time.Time{}, logChannelID)
 	}
 }
 
@@ -285,21 +302,8 @@ func (b *Bot) handleSpamMessage(message *structs.Message, adminRights AdminRight
 	// отправляем в лог канал только если сообщение не из кеша или если юзер был забанен
 	if !processed.FromCache || userWasRestricted {
 		if logChannelID, exists := b.config.LogChannels[message.ChannelID]; exists {
-			// Send additional information to the log channel
-			logMessage := fmt.Sprintf(action+"\nUser: %s\nChannel: %s\nSpam Score: %.2f/%.2f", message.UserName, message.ChannelName, processed.SpamScore, b.config.Threshold)
-			if !deletedTime.IsZero() {
 
-				logMessage += fmt.Sprintf(
-					"\nTime to delete: %s/%s seconds",
-					formatDuration(message.ReceivedAt.UTC().Sub(message.MessageTime)),
-					formatDuration(deletedTime.UTC().Sub(message.MessageTime)),
-				)
-			}
-			logMsg := tgbotapi.NewMessage(logChannelID, logMessage)
-			_, err := b.api.Send(logMsg)
-			if err != nil {
-				b.logger.Error("Failed to send log message to log channel", "error", err, "logChannelID", logChannelID)
-			}
+			b.sendCheckResultMessage(action, message, processed, deletedTime, logChannelID)
 		}
 	}
 }

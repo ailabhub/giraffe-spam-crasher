@@ -28,12 +28,12 @@ func NewSpamProcessor(
 	}
 }
 
-func (s *SpamProcessor) CheckForSpam(ctx context.Context, message *structs.Message) (structs.SpamCheckResult, error) {
+func (s *SpamProcessor) CheckForSpam(ctx context.Context, message *structs.Message, useCache bool) (structs.SpamCheckResult, error) {
 	var (
 		spamScore structs.SpamCheckResult
 		err       error
 	)
-	if message.Hash() != "" {
+	if useCache && message.Hash() != "" {
 		spamScore, err = s.getFromCache(ctx, message)
 		if err != nil {
 			slog.Error("get from cache", "error", err)
