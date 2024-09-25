@@ -189,7 +189,7 @@ func (b *Bot) processTelegramMessage(ctx context.Context, message *structs.Messa
 	if privateMessage {
 		b.sendCheckResultMessage("Checked", message, processed, time.Time{}, message.ChannelID)
 		return
-	} 
+	}
 	if processed.SpamScore <= b.config.Threshold {
 		b.incrementUserMessageCount(message)
 		b.forwardMessageToLogChannel(message, processed, false)
