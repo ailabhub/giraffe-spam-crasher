@@ -219,7 +219,7 @@ func (b *Bot) incrementUserMessageCount(message *structs.Message) {
 	}
 }
 
-func (b *Bot) sendCheckResultMessage(action string, message *structs.Message, processed structs.SpamCheckResult, deletedTime time.Time, channelId int64) {
+func (b *Bot) sendCheckResultMessage(action string, message *structs.Message, processed structs.SpamCheckResult, deletedTime time.Time, channelID int64) {
 	logMessage := fmt.Sprintf("%s:\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f / %.2f \nReasoning: \n%s", action, message.UserID, message.ChannelID, processed.SpamScore, b.config.Threshold, processed.Reasoning)
 	if !deletedTime.IsZero() {
 
@@ -230,9 +230,9 @@ func (b *Bot) sendCheckResultMessage(action string, message *structs.Message, pr
 		)
 	}
 
-	logMsg := tgbotapi.NewMessage(channelId, logMessage)
+	logMsg := tgbotapi.NewMessage(channelID, logMessage)
 	if _, err := b.api.Send(logMsg); err != nil {
-		b.logger.Error("Failed to send log message to log channel", "error", err, "channelId", channelId)
+		b.logger.Error("Failed to send log message to log channel", "error", err, "channelID", channelID)
 	}
 }
 
