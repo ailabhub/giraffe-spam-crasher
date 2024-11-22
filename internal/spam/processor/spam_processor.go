@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/ailabhub/giraffe-spam-crasher/internal/consts"
 	"github.com/ailabhub/giraffe-spam-crasher/internal/structs"
@@ -56,7 +57,9 @@ func (s *SpamProcessor) CheckForSpam(ctx context.Context, message *structs.Messa
 		retry.OnRetry(func(i uint, err error) {
 			slog.Warn("Spam check failed, retrying", "attempt", i, "error", err)
 		}),
-		retry.Attempts(3),
+		retry.Attempts(10),
+		retry.Delay(100*time.Millisecond),
+		retry.DelayType(retry.BackOffDelay),
 	)
 	if err != nil {
 		return structs.SpamCheckResult{}, fmt.Errorf("retry.Do: %w", err)
