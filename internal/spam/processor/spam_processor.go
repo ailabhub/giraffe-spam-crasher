@@ -57,7 +57,7 @@ func (s *SpamProcessor) CheckForSpam(ctx context.Context, message *structs.Messa
 		retry.OnRetry(func(i uint, err error) {
 			slog.Warn("Spam check failed, retrying", "attempt", i, "error", err)
 		}),
-		retry.Attempts(10),
+		retry.Attempts(20),
 		retry.Delay(100*time.Millisecond),
 		retry.DelayType(retry.BackOffDelay),
 	)
