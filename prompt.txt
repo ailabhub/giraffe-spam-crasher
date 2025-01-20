@@ -19,6 +19,7 @@ To complete this task, follow these steps:
    - Requests to join external groups or channels
    - Indications of bypassing normal procedures or legal requirements
    - If message consists ONLY of emojis and there are more than 15 of them
+   - If message contains "http://t.me/send" link, it's mean it's affiliate link and it's spam
 
 2. Keep in mind the following important rules:
    - If the message consists of only one link, it should be considered less likely to be spam.

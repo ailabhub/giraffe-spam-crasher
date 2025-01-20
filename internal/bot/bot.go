@@ -39,6 +39,11 @@ type Config struct {
 	NewUserThreshold  int
 	WhitelistChannels []int64
 	LogChannels       map[int64]int64
+	SettingByChannel  map[int64]Setting
+}
+
+type Setting struct {
+	BanUserThreshold int
 }
 
 func New(rdb *redis.Client, spamProcessor SpamProcessor, config *Config, logger *slog.Logger) (*Bot, error) {
@@ -255,6 +260,11 @@ func (b *Bot) forwardMessageToLogChannel(message *structs.Message, processed str
 func (b *Bot) handleSpamMessage(message *structs.Message, adminRights AdminRights, processed structs.SpamCheckResult) {
 	action := "👻 Spam detected and logged"
 
+	// TODO: count by user, not by message
+	userSpamMessageCount := 0
+	if processed.FromCache {
+		userSpamMessageCount += 1
+	}
 	// отправляем в лог канал только если сообщение не из кеша
 	if !processed.FromCache {
 		if logChannelID, exists := b.config.LogChannels[message.ChannelID]; exists {
@@ -282,7 +292,8 @@ func (b *Bot) handleSpamMessage(message *structs.Message, adminRights AdminRight
 		}
 	}
 	userWasRestricted := false
-	if processed.FromCache && adminRights.CanRestrictMembers {
+	banSetting := b.config.SettingByChannel[message.ChannelID]
+	if userSpamMessageCount >= banSetting.BanUserThreshold && adminRights.CanRestrictMembers {
 		restrictConfig := tgbotapi.RestrictChatMemberConfig{
 			ChatMemberConfig: tgbotapi.ChatMemberConfig{
 				ChatID: message.ChannelID,
