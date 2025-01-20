@@ -169,6 +169,15 @@ func main() { //nolint:gocyclo,gocognit
 		NewUserThreshold:  *newUserThreshold,
 		WhitelistChannels: whitelistChannels,
 		LogChannels:       logChannels,
+		// TODO: refactor this, read from settings
+		SettingByChannel: map[int64]bot.Setting{
+			// -1001098030726: {
+			// 	BanUserThreshold: 0,
+			// },
+			-1001542134110: {
+				BanUserThreshold: 1,
+			},
+		},
 	}, logger)
 
 	if err != nil {
