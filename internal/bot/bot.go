@@ -293,6 +293,7 @@ func (b *Bot) handleSpamMessage(message *structs.Message, adminRights AdminRight
 	}
 	userWasRestricted := false
 	banSetting := b.config.SettingByChannel[message.ChannelID]
+	slog.Info("banSetting", "banSetting", banSetting, "userSpamMessageCount", userSpamMessageCount, "adminRights", adminRights)
 	if userSpamMessageCount >= banSetting.BanUserThreshold && adminRights.CanRestrictMembers {
 		restrictConfig := tgbotapi.RestrictChatMemberConfig{
 			ChatMemberConfig: tgbotapi.ChatMemberConfig{
