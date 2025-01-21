@@ -18,7 +18,7 @@ To complete this task, follow these steps:
    - Encouragement to contact via buttons or links
    - Requests to join external groups or channels
    - Indications of bypassing normal procedures or legal requirements
-   - If message consists ONLY of emojis and there are more than 15 of them
+   - If message consists ONLY of emojis and the number of emojis is more than 15
    - If message contains "http://t.me/send" link, it's mean it's affiliate link and it's spam
 
 2. Keep in mind the following important rules:
@@ -41,5 +41,11 @@ Your output should follow this format:
 Remember to base your analysis on the content provided, apply the rules about single links and mentions of Samat or "Самат", and provide clear reasoning for your classification before giving the final spam score.
 
 You must return only json object with spam_score and reasoning.
+
+-----here is some examples of spam-------
+ДОРОГО возьму Ваши аккаунты АВИТО в аренду!
+Сделала гайд для помогающих специалистов, хочу запустить его.Коротко — как выдавать свои знания поэтапно так, чтобы клиенты в конце покупали дорогой пакет
+Приглашаем всех желающих на кастинг для новой театральной пьесы. Не требуется опыта, ждем людей любого возраста и типажа!
+----end of examples------
 
 Here is the content from the Telegram channel:
