@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -24,6 +25,7 @@ type AIProvider interface {
 }
 
 func main() { //nolint:gocyclo,gocognit
+	// get build information embedded in the running binary
 	ctx := context.Background()
 	logLevel := flag.String("log-level", "info", "Logging level (debug, info, warn, error)")
 	historyFile := flag.String("history", "", "Path to the history file")
@@ -58,6 +60,9 @@ func main() { //nolint:gocyclo,gocognit
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: logLevelValue}))
 	slog.SetDefault(logger)
+
+	info, _ := debug.ReadBuildInfo()
+	slog.Info("Build info", "go_version", info.GoVersion, "app_version", info.Main.Version)
 
 	redisURL := os.Getenv("REDIS_URL")
 	if redisURL == "" {
