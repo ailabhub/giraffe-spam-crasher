@@ -35,6 +35,7 @@ func main() { //nolint:gocyclo,gocognit
 	promptPath := flag.String("prompt", "", "Path to the prompt text file")
 	threshold := flag.Float64("spam-threshold", 0.5, "Threshold for classifying a message as spam")
 	newUserThreshold := flag.Int("new-user-threshold", 1, "Threshold for classifying user as new")
+	instantBan := flag.Bool("instant-ban", false, "When enabled, bans users immediately upon spam detection instead of just restricting them")
 	var whitelistChannels intSliceFlag
 	flag.Var(&whitelistChannels, "whitelist-channels", "Comma-separated list of whitelisted channel IDs")
 
@@ -174,6 +175,7 @@ func main() { //nolint:gocyclo,gocognit
 		NewUserThreshold:  *newUserThreshold,
 		WhitelistChannels: whitelistChannels,
 		LogChannels:       logChannels,
+		InstantBan:        *instantBan,
 		// TODO: refactor this, read from settings
 		SettingByChannel: map[int64]bot.Setting{
 			// -1001098030726: {
