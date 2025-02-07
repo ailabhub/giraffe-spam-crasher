@@ -39,6 +39,7 @@ type Config struct {
 	NewUserThreshold  int
 	WhitelistChannels []int64
 	LogChannels       map[int64]int64
+	InstantBan        bool
 	SettingByChannel  map[int64]Setting
 }
 
@@ -74,7 +75,7 @@ func New(rdb *redis.Client, spamProcessor SpamProcessor, config *Config, logger 
 }
 func (b *Bot) Start() { //nolint:gocyclo,gocognit
 	b.logger.Info("Authorized on account", "username", b.api.Self.UserName)
-	b.logger.Info("Config", "threshold", b.config.Threshold, "newUserThreshold", b.config.NewUserThreshold, "whitelistChannels", b.config.WhitelistChannels)
+	b.logger.Info("Config", "threshold", b.config.Threshold, "newUserThreshold", b.config.NewUserThreshold, "whitelistChannels", b.config.WhitelistChannels, "instantBan", b.config.InstantBan)
 	b.logger.Info("Starting bot")
 
 	// Start the cache clearing goroutine
@@ -293,8 +294,23 @@ func (b *Bot) handleSpamMessage(message *structs.Message, adminRights AdminRight
 	}
 	userWasRestricted := false
 	banSetting := b.config.SettingByChannel[message.ChannelID]
-	slog.Info("banSetting", "banSetting", banSetting, "userSpamMessageCount", userSpamMessageCount, "adminRights", adminRights)
-	if userSpamMessageCount >= banSetting.BanUserThreshold && adminRights.CanRestrictMembers {
+	b.logger.Info("banSetting", "banSetting", banSetting, "userSpamMessageCount", userSpamMessageCount, "adminRights", adminRights)
+	if adminRights.CanRestrictMembers && b.config.InstantBan {
+		restrictConfig := tgbotapi.BanChatMemberConfig{
+			ChatMemberConfig: tgbotapi.ChatMemberConfig{
+				ChatID: message.ChannelID,
+				UserID: message.UserID,
+			},
+		}
+		_, err := b.api.Request(restrictConfig)
+		if err != nil {
+			slog.Error("Failed to ban user", "error", err, "userID", message.UserID, "channelID", message.ChannelID)
+		} else {
+			slog.Info("Banned user", "userID", message.UserID, "channelID", message.ChannelID)
+			userWasRestricted = true
+			action += "\n👩‍⚖️User banned"
+		}
+	} else if userSpamMessageCount >= banSetting.BanUserThreshold && adminRights.CanRestrictMembers {
 		restrictConfig := tgbotapi.RestrictChatMemberConfig{
 			ChatMemberConfig: tgbotapi.ChatMemberConfig{
 				ChatID: message.ChannelID,
