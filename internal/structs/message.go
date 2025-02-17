@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"time"
+
+	tgbotapi "github.com/OvyFlash/telegram-bot-api/v6"
 )
 
 type Message struct {
@@ -18,10 +20,16 @@ type Message struct {
 	UserName    string
 	ReceivedAt  time.Time
 	MessageTime time.Time
+	Quote       string
+	RawOriginal *tgbotapi.Message
 }
 
 func (m *Message) HasImage() bool {
 	return m.Image != nil
+}
+
+func (m *Message) HasQuote() bool {
+	return m.Quote != ""
 }
 
 func (m *Message) HasText() bool {

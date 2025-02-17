@@ -45,8 +45,8 @@ func (s *SpamProcessor) CheckForSpam(ctx context.Context, message *structs.Messa
 		return spamScore, nil
 	}
 
-	if !message.HasText() && !message.HasImage() {
-		jsonMessage, err := json.Marshal(message)
+	if !message.HasText() && !message.HasImage() && !message.HasQuote() {
+		jsonMessage, err := json.Marshal(message.RawOriginal)
 		if err != nil {
 			slog.Error("json.Marshal", "error", err)
 		}
