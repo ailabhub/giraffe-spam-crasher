@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
+	tgbotapi "github.com/OvyFlash/telegram-bot-api/v6"
 	"github.com/ailabhub/giraffe-spam-crasher/internal/consts"
 	"github.com/ailabhub/giraffe-spam-crasher/internal/structs"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -144,7 +144,9 @@ func (b *Bot) isSelfMessage(message *structs.Message) bool {
 
 func (b *Bot) sendSelfMessageWarning(message *tgbotapi.Message) {
 	replyMsg := tgbotapi.NewMessage(message.Chat.ID, "Sorry, it doesn't work this way. Add me to your channel as an admin.")
-	replyMsg.ReplyToMessageID = message.MessageID
+	replyMsg.ReplyParameters = tgbotapi.ReplyParameters{
+		MessageID: message.MessageID,
+	}
 	if _, err := b.api.Send(replyMsg); err != nil {
 		b.logger.Error("Failed to send reply message", "error", err)
 	}
@@ -298,7 +300,9 @@ func (b *Bot) handleSpamMessage(message *structs.Message, adminRights AdminRight
 	if adminRights.CanRestrictMembers && b.config.InstantBan {
 		restrictConfig := tgbotapi.BanChatMemberConfig{
 			ChatMemberConfig: tgbotapi.ChatMemberConfig{
-				ChatID: message.ChannelID,
+				ChatConfig: tgbotapi.ChatConfig{
+					ChatID: message.ChannelID,
+				},
 				UserID: message.UserID,
 			},
 		}
@@ -313,7 +317,9 @@ func (b *Bot) handleSpamMessage(message *structs.Message, adminRights AdminRight
 	} else if userSpamMessageCount >= banSetting.BanUserThreshold && adminRights.CanRestrictMembers {
 		restrictConfig := tgbotapi.RestrictChatMemberConfig{
 			ChatMemberConfig: tgbotapi.ChatMemberConfig{
-				ChatID: message.ChannelID,
+				ChatConfig: tgbotapi.ChatConfig{
+					ChatID: message.ChannelID,
+				},
 				UserID: message.UserID,
 			},
 		}
@@ -360,7 +366,9 @@ func (b *Bot) checkAdminRights(chatID int64, botID int64) AdminRights {
 
 	me, err := b.api.GetChatMember(tgbotapi.GetChatMemberConfig{
 		ChatConfigWithUser: tgbotapi.ChatConfigWithUser{
-			ChatID: chatID,
+			ChatConfig: tgbotapi.ChatConfig{
+				ChatID: chatID,
+			},
 			UserID: botID,
 		},
 	})
@@ -502,6 +510,12 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 		ReceivedAt:  time.Now().UTC(),
 		MessageTime: time.Unix(int64(tgMessage.Date), 0).UTC(),
 	}
+
+	if tgMessage.Quote != nil {
+		message.Quote = tgMessage.Quote.Text
+	}
+
+	message.RawOriginal = tgMessage
 
 	if len(tgMessage.Photo) > 0 {
 		// телега дает 3 размера фотографии в слайсе, от низкого до высокого качества, берем среднее
