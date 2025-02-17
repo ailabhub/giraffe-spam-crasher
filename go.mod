@@ -1,11 +1,13 @@
 module github.com/ailabhub/giraffe-spam-crasher
 
-go 1.21.1
+go 1.23
+
+toolchain go1.23.2
 
 require (
+	github.com/OvyFlash/telegram-bot-api/v6 v6.0.0-20241030124621-1376e01c644a
 	github.com/avast/retry-go v2.7.0+incompatible
 	github.com/disintegration/imaging v1.6.2
-	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/google/generative-ai-go v0.17.0
 	github.com/redis/go-redis/v9 v9.6.1
 	github.com/sashabaranov/go-openai v1.27.1
