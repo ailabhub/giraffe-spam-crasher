@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -117,6 +118,15 @@ func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
 	message, err := b.fromTGToInternalMessage(ctx, update.Message)
 	if err != nil {
 		b.logger.Error("Error converting message", "error", err)
+		return
+	}
+
+	if message.IsEmpty() {
+		jsonMessage, err := json.Marshal(message)
+		if err != nil {
+			b.logger.Error("json.Marshal", "error", err)
+		}
+		b.logger.Warn("Message has no text or image, skipping spam check", "message", string(jsonMessage))
 		return
 	}
 
