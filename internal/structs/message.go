@@ -36,6 +36,10 @@ func (m *Message) HasText() bool {
 	return m.Text != ""
 }
 
+func (m *Message) IsEmpty() bool {
+	return !m.HasText() && !m.HasImage() && !m.HasQuote()
+}
+
 func (m *Message) ToAnthropicMessage(prompt string) (AnthropicMessage, error) {
 	content := []AnthropicContent{
 		{
