@@ -20,7 +20,7 @@ services:
       "./bot",
       "-history=${HISTORY:-}", # for example: /root/result.json
       "-prompt=${PROMPT:-/root/prompt.txt}",
-      "-model=${MODEL:-claude-3-5-sonnet-latest}",
+      "-model=${MODEL:-claude-3-7-sonnet-latest}",
       "-provider=${PROVIDER:-anthropic}",
       "-spam-threshold=${SPAM_THRESHOLD}", #0.5
       "-new-user-threshold=${NEW_USER_THRESHOLD:-1}",
