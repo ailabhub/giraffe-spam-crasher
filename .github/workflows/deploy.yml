@@ -23,7 +23,7 @@ jobs:
       # Step 3: Deploy to the server
       - name: Deploy to Server
         run: |
-          ssh -o StrictHostKeyChecking=no -p 222 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no -p 222 ${{ secrets.SERVER_USER_2 }}@${{ secrets.SERVER_IP_2 }} << 'EOF'
             cd /home/giraffe-spam-crasher           
             echo "Removing old origin and adding new one..." > deploy.log
             echo "Check deploy!" >> deploy.log            
