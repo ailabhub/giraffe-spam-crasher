@@ -18,16 +18,16 @@ jobs:
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.5.4
         with:
-          ssh-private-key: ${{ secrets.SERVER_SSH_KEY_2 }}
+          ssh-private-key: ${{ secrets.SERVER_SSH_KEY }}
 
       # Step 3: Deploy to the server
       - name: Deploy to Server
         run: |
-          ssh -o StrictHostKeyChecking=no -p 22 ${{ secrets.SERVER_USER_2 }}@${{ secrets.SERVER_IP_2 }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no -p 222 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
             cd /home/giraffe-spam-crasher           
             echo "Removing old origin and adding new one..." > deploy.log
             echo "Check deploy!" >> deploy.log            
-            eval "$(ssh-agent -s)" >> deploy.log            
+            eval (ssh-agent -c) >> deploy.log            
             ssh-add ~/.ssh/github-actions-key >> deploy.log      
             git remote remove origin >> deploy.log 2>&1
             git remote add origin git@github.com:ailabhub/giraffe-spam-crasher.git >> deploy.log 2>&1
