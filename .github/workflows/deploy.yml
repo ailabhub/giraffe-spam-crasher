@@ -34,8 +34,8 @@ jobs:
             echo "Pulling latest changes..." >> deploy.log
             git pull origin main >> deploy.log 2>&1
             echo "Stopping running containers..." >> deploy.log
-            docker-compose down >> deploy.log 2>&1
+            docker compose down >> deploy.log 2>&1
             echo "Building and starting new containers..." >> deploy.log
-            docker-compose up -d --build >> deploy.log 2>&1
+            docker compose up -d --build >> deploy.log 2>&1
             echo "Deployment completed successfully." >> deploy.log
           EOF
