@@ -1,8 +1,6 @@
-version: '3.8'
-
 services:
   bot:
-    build: .
+    image: ghcr.io/ailabhub/giraffe-spam-crasher:${IMAGE_TAG}
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
