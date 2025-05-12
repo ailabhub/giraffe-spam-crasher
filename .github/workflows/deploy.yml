@@ -1,41 +1,59 @@
-name: Deploy to Server
+name: CI & Deploy
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
+
+env:
+  IMAGE: ghcr.io/ailabhub/giraffe-spam-crasher:${{ github.sha }}
+  COMPOSE_INTERACTIVE_NO_CLI: 1   # keeps logs neat
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: read
+      packages: write          # allow push to GHCR
     steps:
-      # Step 1: Checkout the code
-      - name: Checkout code
-        uses: actions/checkout@v2
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      # Step 2: Set up SSH agent and add the private key
-      - name: Setup SSH
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_PAT }}
+
+      - name: Build & push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production      # optional, for required reviewers
+    steps:
+      - name: Add deploy key & known_hosts
         uses: webfactory/ssh-agent@v0.5.4
         with:
-          ssh-private-key: ${{ secrets.SERVER_SSH_KEY_2 }}
-
-      # Step 3: Deploy to the server
-      - name: Deploy to Server
+          ssh-private-key: |
+            ${{ secrets.DEPLOY_SSH_KEY }}
+      - name: Replace tag in compose file
         run: |
-          ssh -o StrictHostKeyChecking=no -p 22 ${{ secrets.SERVER_USER_2 }}@${{ secrets.SERVER_IP_2 }} << 'EOF'
-            cd /home/giraffe-spam-crasher           
-            echo "Removing old origin and adding new one..." > deploy.log
-            echo "Check deploy!" >> deploy.log            
-            eval "$(ssh-agent -s)" >> deploy.log            
-            ssh-add ~/.ssh/github-actions-key >> deploy.log      
-            git remote remove origin >> deploy.log 2>&1
-            git remote add origin git@github.com:ailabhub/giraffe-spam-crasher.git >> deploy.log 2>&1
-            echo "Pulling latest changes..." >> deploy.log
-            git pull origin main >> deploy.log 2>&1
-            echo "Stopping running containers..." >> deploy.log
-            docker compose down >> deploy.log 2>&1
-            echo "Building and starting new containers..." >> deploy.log
-            docker compose up -d --build >> deploy.log 2>&1
-            echo "Deployment completed successfully." >> deploy.log
-          EOF
+          sed -i "s|IMAGE_TAG=.*|IMAGE_TAG=${{ github.sha }}|" docker-compose.env
+      - name: Ship new tag to server
+        run: |
+          rsync -avz --delete \
+            docker-compose.yml docker-compose.env \
+            ${{ secrets.DEPLOY_HOST }}:/srv/giraffe/
+      - name: Pull & restart
+        run: |
+          ssh ${{ secrets.DEPLOY_HOST }} \
+            'cd /srv/giraffe && docker compose pull && docker compose up -d --remove-orphans'
