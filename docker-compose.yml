@@ -1,5 +1,6 @@
 services:
   bot:
+    # build: . # for local development
     image: ghcr.io/ailabhub/giraffe-spam-crasher:${IMAGE_TAG}
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}

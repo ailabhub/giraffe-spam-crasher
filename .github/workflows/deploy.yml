@@ -38,32 +38,26 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      # 0. Клонируем репозиторий, чтобы получить docker-compose.yml
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4      # чтобы в раннере был prompt.txt и compose-файл
 
-      # 1. SSH-agent с ключом деплоя
       - name: Add deploy key
         uses: webfactory/ssh-agent@v0.5.4
         with:
           ssh-private-key: |
             ${{ secrets.DEPLOY_SSH_KEY }}
 
-      # 2. Добавляем ключ хоста (исправляет Host key verification failed)
       - name: Trust server host key
         run: ssh-keyscan -H 5.9.39.84 >> ~/.ssh/known_hosts
 
-      # 3. Создаём deploy.env с тегом коммита
       - name: Prepare deploy env
         run: echo "IMAGE_TAG=${{ github.sha }}" > deploy.env
 
-      # 4. Отправляем compose-файл и deploy.env
       - name: Ship artefacts to server
         run: |
           rsync -avz --delete \
-            docker-compose.yml deploy.env \
+            docker-compose.yml deploy.env prompt.txt \
             ${{ secrets.DEPLOY_HOST }}:/srv/giraffe/
 
-      # 5. Pull + up
       - name: Pull & restart stack
         run: |
           ssh ${{ secrets.DEPLOY_HOST }} '
