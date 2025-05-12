@@ -9,11 +9,12 @@ env:
   COMPOSE_INTERACTIVE_NO_CLI: 1   # keeps logs neat
 
 jobs:
+# -------------------- BUILD --------------------
   build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write          # allow push to GHCR
+      packages: write            # allow push to GHCR
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,9 +26,9 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.repository_owner }}   # usually same as github.actor
+          username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-          
+
       - name: Build & push image
         uses: docker/build-push-action@v5
         with:
@@ -35,35 +36,41 @@ jobs:
           push: true
           tags: ${{ env.IMAGE }}
 
+# -------------------- DEPLOY --------------------
   deploy:
     needs: build
     runs-on: ubuntu-latest
     environment: production
-  
+
     steps:
-      - name: Add deploy key & known_hosts
+      # —–– 0. SSH-agent + приватный ключ CI
+      - name: Add deploy key
         uses: webfactory/ssh-agent@v0.5.4
         with:
           ssh-private-key: |
             ${{ secrets.DEPLOY_SSH_KEY }}
-  
-      # 1. формируем deploy.env с новым тегом
+
+      # —–– 1. Добавляем host-key сервера ➜ known_hosts (фикс ошибки)
+      - name: Trust server host key
+        run: |
+          ssh-keyscan -H 5.9.39.84 >> ~/.ssh/known_hosts
+
+      # —–– 2. Создаём deploy.env с новым SHA-тегом
       - name: Prepare deploy env
         run: echo "IMAGE_TAG=${{ github.sha }}" > deploy.env
-  
-      # 2. отправляем compose-файл и deploy.env
+
+      # —–– 3. Отправляем compose-файл и deploy.env
       - name: Ship artefacts to server
         run: |
           rsync -avz --delete \
             docker-compose.yml deploy.env \
             ${{ secrets.DEPLOY_HOST }}:/srv/giraffe/
-  
-      # 3. pull + up с двумя env-файлами
+
+      # —–– 4. Pull + up с двумя env-файлами
       - name: Pull & restart stack
         run: |
           ssh ${{ secrets.DEPLOY_HOST }} '
             set -e
             cd /srv/giraffe
             docker compose --env-file .env --env-file deploy.env pull
-            docker compose --env-file .env --env-file deploy.env up -d --remove-orphans
-          '
+            docker compose --env-file .env --env-file deploy.env up
