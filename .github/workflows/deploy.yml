@@ -38,22 +38,32 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    environment: production      # optional, for required reviewers
+    environment: production
+  
     steps:
       - name: Add deploy key & known_hosts
         uses: webfactory/ssh-agent@v0.5.4
         with:
           ssh-private-key: |
             ${{ secrets.DEPLOY_SSH_KEY }}
-      - name: Replace tag in compose file
-        run: |
-          sed -i "s|IMAGE_TAG=.*|IMAGE_TAG=${{ github.sha }}|" docker-compose.env
-      - name: Ship new tag to server
+  
+      # 1. формируем deploy.env с новым тегом
+      - name: Prepare deploy env
+        run: echo "IMAGE_TAG=${{ github.sha }}" > deploy.env
+  
+      # 2. отправляем compose-файл и deploy.env
+      - name: Ship artefacts to server
         run: |
           rsync -avz --delete \
-            docker-compose.yml docker-compose.env \
+            docker-compose.yml deploy.env \
             ${{ secrets.DEPLOY_HOST }}:/srv/giraffe/
-      - name: Pull & restart
+  
+      # 3. pull + up с двумя env-файлами
+      - name: Pull & restart stack
         run: |
-          ssh ${{ secrets.DEPLOY_HOST }} \
-            'cd /srv/giraffe && docker compose pull && docker compose up -d --remove-orphans'
+          ssh ${{ secrets.DEPLOY_HOST }} '
+            set -e
+            cd /srv/giraffe
+            docker compose --env-file .env --env-file deploy.env pull
+            docker compose --env-file .env --env-file deploy.env up -d --remove-orphans
+          '
