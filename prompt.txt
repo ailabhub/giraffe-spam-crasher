@@ -20,6 +20,7 @@ To complete this task, follow these steps:
    - Indications of bypassing normal procedures or legal requirements
    - If message consists ONLY of emojis and the number of emojis is more than 15
    - If message contains "http://t.me/send" link, it's mean it's affiliate link and it's spam
+   - Messages offering non-IT related physical labor or services (construction work, animal care, cleaning, dismantling structures) with cash payment promises in an IT-focused channel should be considered spam
 
 2. Keep in mind the following important rules:
    - If the message consists of only one link, it should be considered less likely to be spam.
