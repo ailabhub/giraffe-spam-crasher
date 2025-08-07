@@ -129,6 +129,14 @@ func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
 		b.logger.Warn("Message has no text or image, skipping spam check", "message", string(jsonMessage))
 		return
 	}
+	
+	// Log forwarded messages for debugging
+	if message.ForwardOrigin != nil {
+		b.logger.Info("Processing forwarded message", 
+			"messageID", message.MessageID,
+			"forwardOriginType", message.ForwardOrigin.Type,
+			"forwardDate", time.Unix(message.ForwardOrigin.Date, 0).UTC())
+	}
 
 	if b.isSelfMessage(&message) {
 		b.sendSelfMessageWarning(update.Message)
@@ -202,6 +210,8 @@ func (b *Bot) processTelegramMessage(ctx context.Context, message *structs.Messa
 		processed.SpamScore,
 		"reasoning",
 		processed.Reasoning,
+		"isForwarded",
+		message.ForwardOrigin != nil,
 	)
 
 	if privateMessage {
@@ -239,6 +249,19 @@ func (b *Bot) incrementUserMessageCount(message *structs.Message) {
 
 func (b *Bot) sendCheckResultMessage(action string, message *structs.Message, processed structs.SpamCheckResult, deletedTime time.Time, channelID int64) {
 	logMessage := fmt.Sprintf("%s:\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f / %.2f \nReasoning: \n%s", action, message.UserID, message.ChannelID, processed.SpamScore, b.config.Threshold, processed.Reasoning)
+	
+	// Add forward information if present
+	if message.ForwardOrigin != nil {
+		logMessage += fmt.Sprintf("\n\n📤 Forwarded from: %s", message.ForwardOrigin.Type)
+		if message.ForwardOrigin.SenderUser != nil {
+			logMessage += fmt.Sprintf(" (User: %s)", message.ForwardOrigin.SenderUser.FirstName)
+		} else if message.ForwardOrigin.SenderChat != nil {
+			logMessage += fmt.Sprintf(" (Chat: %s)", message.ForwardOrigin.SenderChat.Title)
+		} else if message.ForwardOrigin.Chat != nil {
+			logMessage += fmt.Sprintf(" (Channel: %s)", message.ForwardOrigin.Chat.Title)
+		}
+	}
+	
 	if !deletedTime.IsZero() {
 
 		logMessage += fmt.Sprintf(
@@ -526,6 +549,11 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 	}
 
 	message.RawOriginal = tgMessage
+	
+	// Save forward origin information
+	if tgMessage.ForwardOrigin != nil {
+		message.ForwardOrigin = tgMessage.ForwardOrigin
+	}
 
 	if len(tgMessage.Photo) > 0 {
 		// телега дает 3 размера фотографии в слайсе, от низкого до высокого качества, берем среднее

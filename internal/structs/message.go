@@ -22,6 +22,8 @@ type Message struct {
 	MessageTime time.Time
 	Quote       string
 	RawOriginal *tgbotapi.Message
+	// Information about the original message for forwarded messages
+	ForwardOrigin *tgbotapi.MessageOrigin
 }
 
 func (m *Message) HasImage() bool {
