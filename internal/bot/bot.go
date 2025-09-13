@@ -109,8 +109,7 @@ func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
 		}
 	}()
 
-	if update.Message == nil || update.Message.ReplyToMessage != nil || update.Message.From.ID == me.ID {
-		return
+	if update.Message == nil || update.Message.From.ID == me.ID { // || update.Message.ReplyToMessage != nil
 	}
 
 	ctx := context.Background()

@@ -16,6 +16,7 @@ To complete this task, follow these steps:
    - Claims of high earnings or quick financial gains
    - Vague job offers or income opportunities
    - Encouragement to contact via buttons or links
+   - Encouragement to move the conversation to private messages/DMs (e.g., "в личку", "в личке", "ЛС", "пиши в личку", "обсудим в личных", "DM", "direct"), especially with vague compliments and no concrete details
    - Requests to join external groups or channels
    - Indications of bypassing normal procedures or legal requirements
    - If message consists ONLY of emojis and the number of emojis is more than 15
