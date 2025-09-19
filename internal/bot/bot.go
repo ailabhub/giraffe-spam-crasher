@@ -109,7 +109,12 @@ func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
 		}
 	}()
 
-	if update.Message == nil || update.Message.From.ID == me.ID { // || update.Message.ReplyToMessage != nil
+	if update.Message == nil {
+		return
+	}
+
+	if update.Message.From == nil || update.Message.From.ID == me.ID { // || update.Message.ReplyToMessage != nil
+		return
 	}
 
 	ctx := context.Background()
@@ -509,6 +514,10 @@ func (b *Bot) sendDailyStats() {
 }
 
 func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.Message) (structs.Message, error) {
+	if tgMessage == nil {
+		return structs.Message{}, errors.New("nil telegram message")
+	}
+
 	message := structs.Message{
 		Text:        tgMessage.Text,
 		ChannelID:   tgMessage.Chat.ID,
