@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -519,7 +520,6 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 	}
 
 	message := structs.Message{
-		Text:        tgMessage.Text,
 		ChannelID:   tgMessage.Chat.ID,
 		ChannelName: tgMessage.Chat.Title,
 		MessageID:   int64(tgMessage.MessageID),
@@ -535,6 +535,16 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 
 	message.RawOriginal = tgMessage
 
+	var textParts []string
+	if tgMessage.Text != "" {
+		textParts = append(textParts, tgMessage.Text)
+	}
+	if tgMessage.Caption != "" {
+		textParts = append(textParts, tgMessage.Caption)
+	}
+
+	message.Text = strings.Join(textParts, "\n")
+
 	if len(tgMessage.Photo) > 0 {
 		// телега дает 3 размера фотографии в слайсе, от низкого до высокого качества, берем среднее
 		imageData, err := b.downloadTelegramImage(ctx, tgMessage.Photo[1])
@@ -542,7 +552,6 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 			return structs.Message{}, fmt.Errorf("error downloading image: %w", err)
 		}
 
-		message.Text = tgMessage.Caption
 		img := structs.Image(imageData)
 		message.Image = &img
 	}
