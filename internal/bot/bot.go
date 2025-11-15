@@ -542,18 +542,33 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 	if tgMessage.Caption != "" {
 		textParts = append(textParts, tgMessage.Caption)
 	}
+	if keyboardText := inlineKeyboardText(tgMessage.ReplyMarkup); keyboardText != "" {
+		textParts = append(textParts, keyboardText)
+	}
 
 	message.Text = strings.Join(textParts, "\n")
 
 	if len(tgMessage.Photo) > 0 {
-		// телега дает 3 размера фотографии в слайсе, от низкого до высокого качества, берем среднее
-		imageData, err := b.downloadTelegramImage(ctx, tgMessage.Photo[1])
+		photoIndex := len(tgMessage.Photo) - 1
+		imageData, err := b.downloadTelegramImage(ctx, tgMessage.Photo[photoIndex])
 		if err != nil {
 			return structs.Message{}, fmt.Errorf("error downloading image: %w", err)
 		}
 
 		img := structs.Image(imageData)
 		message.Image = &img
+	} else if tgMessage.Video != nil {
+		if tgMessage.Video.Thumbnail == nil {
+			b.logger.Warn("Video has no thumbnail", "messageID", message.MessageID, "channelID", message.ChannelID)
+		} else {
+			imageData, err := b.downloadTelegramImage(ctx, *tgMessage.Video.Thumbnail)
+			if err != nil {
+				return structs.Message{}, fmt.Errorf("error downloading video thumbnail: %w", err)
+			}
+
+			img := structs.Image(imageData)
+			message.Image = &img
+		}
 	}
 
 	return message, nil
@@ -573,4 +588,28 @@ func (b *Bot) downloadTelegramImage(_ context.Context, photo tgbotapi.PhotoSize)
 	}
 
 	return imageData, nil
+}
+
+func inlineKeyboardText(markup *tgbotapi.InlineKeyboardMarkup) string {
+	if markup == nil {
+		return ""
+	}
+
+	var parts []string
+	for _, row := range markup.InlineKeyboard {
+		for _, button := range row {
+			if button.Text == "" {
+				continue
+			}
+
+			if button.URL != nil && *button.URL != "" {
+				parts = append(parts, fmt.Sprintf("%s -> %s", button.Text, *button.URL))
+				continue
+			}
+
+			parts = append(parts, button.Text)
+		}
+	}
+
+	return strings.Join(parts, "\n")
 }
