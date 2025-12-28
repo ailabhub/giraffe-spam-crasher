@@ -110,17 +110,23 @@ func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
 		}
 	}()
 
-	if update.Message == nil {
+	tgMessage := update.Message
+	isEdit := false
+	if tgMessage == nil {
+		tgMessage = update.EditedMessage
+		isEdit = true
+	}
+	if tgMessage == nil {
 		return
 	}
 
-	if update.Message.From == nil || update.Message.From.ID == me.ID { // || update.Message.ReplyToMessage != nil
+	if tgMessage.From == nil || tgMessage.From.ID == me.ID { // || tgMessage.ReplyToMessage != nil
 		return
 	}
 
 	ctx := context.Background()
 
-	message, err := b.fromTGToInternalMessage(ctx, update.Message)
+	message, err := b.fromTGToInternalMessage(ctx, tgMessage)
 	if err != nil {
 		b.logger.Error("Error converting message", "error", err)
 		return
@@ -146,9 +152,11 @@ func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
 	}
 
 	privateMessage := message.UserID == message.ChannelID
-	if b.isNewUser(ctx, &message) || privateMessage {
-		b.incrementStat(message.ChannelID, consts.StatKeyCheckedCount)
-		b.processTelegramMessage(ctx, &message, privateMessage)
+	if isEdit || b.isNewUser(ctx, &message) || privateMessage {
+		if !isEdit {
+			b.incrementStat(message.ChannelID, consts.StatKeyCheckedCount)
+		}
+		b.processTelegramMessage(ctx, &message, privateMessage, isEdit)
 	}
 }
 
@@ -182,7 +190,7 @@ func (b *Bot) isNewUser(ctx context.Context, message *structs.Message) bool {
 	return count < b.config.NewUserThreshold
 }
 
-func (b *Bot) processTelegramMessage(ctx context.Context, message *structs.Message, privateMessage bool) {
+func (b *Bot) processTelegramMessage(ctx context.Context, message *structs.Message, privateMessage bool, isEdit bool) {
 	var processed structs.SpamCheckResult
 
 	processed, err := b.spamProcessor.CheckForSpam(ctx, message, !privateMessage)
@@ -210,15 +218,17 @@ func (b *Bot) processTelegramMessage(ctx context.Context, message *structs.Messa
 	)
 
 	if privateMessage {
-		b.sendCheckResultMessage("Checked", message, processed, time.Time{}, message.ChannelID)
+		b.sendCheckResultMessage("Checked", message, processed, time.Time{}, message.ChannelID, isEdit)
 		return
 	}
 	if processed.SpamScore <= b.config.Threshold {
-		b.incrementUserMessageCount(message)
-		b.forwardMessageToLogChannel(message, processed, false)
+		if !isEdit {
+			b.incrementUserMessageCount(message)
+		}
+		b.forwardMessageToLogChannel(message, processed, false, isEdit)
 	} else {
 		b.incrementStat(message.ChannelID, consts.StatKeySpamCount)
-		b.handleSpamMessage(message, b.checkAdminRights(message.ChannelID, b.api.Self.ID), processed)
+		b.handleSpamMessage(message, b.checkAdminRights(message.ChannelID, b.api.Self.ID), processed, isEdit)
 	}
 }
 
@@ -242,7 +252,10 @@ func (b *Bot) incrementUserMessageCount(message *structs.Message) {
 	}
 }
 
-func (b *Bot) sendCheckResultMessage(action string, message *structs.Message, processed structs.SpamCheckResult, deletedTime time.Time, channelID int64) {
+func (b *Bot) sendCheckResultMessage(action string, message *structs.Message, processed structs.SpamCheckResult, deletedTime time.Time, channelID int64, isEdit bool) {
+	if isEdit {
+		action = "✏️ EDIT " + action
+	}
 	logMessage := fmt.Sprintf("%s:\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f / %.2f \nReasoning: \n%s", action, message.UserID, message.ChannelID, processed.SpamScore, b.config.Threshold, processed.Reasoning)
 	if !deletedTime.IsZero() {
 
@@ -259,7 +272,7 @@ func (b *Bot) sendCheckResultMessage(action string, message *structs.Message, pr
 	}
 }
 
-func (b *Bot) forwardMessageToLogChannel(message *structs.Message, processed structs.SpamCheckResult, isSpam bool) {
+func (b *Bot) forwardMessageToLogChannel(message *structs.Message, processed structs.SpamCheckResult, isSpam bool, isEdit bool) {
 	if logChannelID, exists := b.config.LogChannels[message.ChannelID]; exists {
 		forwardMsg := tgbotapi.NewForward(logChannelID, message.ChannelID, int(message.MessageID))
 		if _, err := b.api.Send(forwardMsg); err != nil {
@@ -271,11 +284,11 @@ func (b *Bot) forwardMessageToLogChannel(message *structs.Message, processed str
 			action = "🤡 Spam detected and deleted"
 		}
 
-		b.sendCheckResultMessage(action, message, processed, time.Time{}, logChannelID)
+		b.sendCheckResultMessage(action, message, processed, time.Time{}, logChannelID, isEdit)
 	}
 }
 
-func (b *Bot) handleSpamMessage(message *structs.Message, adminRights AdminRights, processed structs.SpamCheckResult) {
+func (b *Bot) handleSpamMessage(message *structs.Message, adminRights AdminRights, processed structs.SpamCheckResult, isEdit bool) {
 	action := "👻 Spam detected and logged"
 
 	// TODO: count by user, not by message
@@ -352,7 +365,7 @@ func (b *Bot) handleSpamMessage(message *structs.Message, adminRights AdminRight
 	if !processed.FromCache || userWasRestricted {
 		if logChannelID, exists := b.config.LogChannels[message.ChannelID]; exists {
 
-			b.sendCheckResultMessage(action, message, processed, deletedTime, logChannelID)
+			b.sendCheckResultMessage(action, message, processed, deletedTime, logChannelID, isEdit)
 		}
 	}
 }
