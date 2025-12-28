@@ -110,16 +110,15 @@ func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
 		}
 	}()
 
-	tgMessage := update.Message
-	isEdit := false
-	if tgMessage == nil {
-		tgMessage = update.EditedMessage
-		isEdit = true
+	if update.Message != nil {
+		b.handleNewMessage(update.Message, me)
 	}
-	if tgMessage == nil {
-		return
+	if update.EditedMessage != nil {
+		b.handleEditedMessage(update.EditedMessage, me)
 	}
+}
 
+func (b *Bot) handleNewMessage(tgMessage *tgbotapi.Message, me *tgbotapi.User) {
 	if tgMessage.From == nil || tgMessage.From.ID == me.ID { // || tgMessage.ReplyToMessage != nil
 		return
 	}
@@ -142,7 +141,7 @@ func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
 	}
 
 	if b.isSelfMessage(&message) {
-		b.sendSelfMessageWarning(update.Message)
+		b.sendSelfMessageWarning(tgMessage)
 		return
 	}
 
@@ -152,11 +151,76 @@ func (b *Bot) handleUpdate(update tgbotapi.Update, me *tgbotapi.User) {
 	}
 
 	privateMessage := message.UserID == message.ChannelID
-	if isEdit || b.isNewUser(ctx, &message) || privateMessage {
-		if !isEdit {
-			b.incrementStat(message.ChannelID, consts.StatKeyCheckedCount)
+	isNewUser := true
+	if !privateMessage {
+		isNewUser = b.isNewUser(ctx, &message)
+		if !isNewUser {
+			return
 		}
-		b.processTelegramMessage(ctx, &message, privateMessage, isEdit)
+	}
+
+	if !privateMessage {
+		b.incrementStat(message.ChannelID, consts.StatKeyCheckedCount)
+	}
+
+	processed, err := b.processTelegramMessage(ctx, &message, privateMessage, false, !privateMessage)
+	if err != nil {
+		return
+	}
+
+	if !privateMessage && isNewUser && processed.SpamScore <= b.config.Threshold {
+		b.watchMessageForEdits(ctx, &message)
+	}
+}
+
+func (b *Bot) handleEditedMessage(tgMessage *tgbotapi.Message, me *tgbotapi.User) {
+	if tgMessage.From == nil || tgMessage.From.ID == me.ID { // || tgMessage.ReplyToMessage != nil
+		return
+	}
+
+	ctx := context.Background()
+
+	message, err := b.fromTGToInternalMessage(ctx, tgMessage)
+	if err != nil {
+		b.logger.Error("Error converting message", "error", err)
+		return
+	}
+
+	if message.IsEmpty() {
+		jsonMessage, err := json.Marshal(message)
+		if err != nil {
+			b.logger.Error("json.Marshal", "error", err)
+		}
+		b.logger.Warn("Message has no text or image, skipping spam check", "message", string(jsonMessage))
+		return
+	}
+
+	if b.isSelfMessage(&message) {
+		return
+	}
+
+	if !b.isWhitelistedChannel(message.ChannelID) {
+		b.logger.Debug("Skipping non-whitelisted channel", "channelID", message.ChannelID)
+		return
+	}
+
+	privateMessage := message.UserID == message.ChannelID
+	if privateMessage {
+		return
+	}
+
+	watched, err := b.isMessageWatched(ctx, message.ChannelID, message.MessageID)
+	if err != nil {
+		b.logger.Error("Error checking edit watch", "error", err, "channelID", message.ChannelID, "messageID", message.MessageID)
+		return
+	}
+	if !watched {
+		return
+	}
+
+	_, err = b.processTelegramMessage(ctx, &message, false, true, false)
+	if err != nil {
+		return
 	}
 }
 
@@ -190,13 +254,13 @@ func (b *Bot) isNewUser(ctx context.Context, message *structs.Message) bool {
 	return count < b.config.NewUserThreshold
 }
 
-func (b *Bot) processTelegramMessage(ctx context.Context, message *structs.Message, privateMessage bool, isEdit bool) {
+func (b *Bot) processTelegramMessage(ctx context.Context, message *structs.Message, privateMessage bool, isEdit bool, useCache bool) (structs.SpamCheckResult, error) {
 	var processed structs.SpamCheckResult
 
-	processed, err := b.spamProcessor.CheckForSpam(ctx, message, !privateMessage)
+	processed, err := b.spamProcessor.CheckForSpam(ctx, message, useCache)
 	if err != nil {
 		b.logger.Error("Error checking for spam after retries", "error", err)
-		return
+		return structs.SpamCheckResult{}, err
 	}
 
 	if processed.FromCache {
@@ -219,7 +283,7 @@ func (b *Bot) processTelegramMessage(ctx context.Context, message *structs.Messa
 
 	if privateMessage {
 		b.sendCheckResultMessage("Checked", message, processed, time.Time{}, message.ChannelID, isEdit)
-		return
+		return processed, nil
 	}
 	if processed.SpamScore <= b.config.Threshold {
 		if !isEdit {
@@ -230,6 +294,7 @@ func (b *Bot) processTelegramMessage(ctx context.Context, message *structs.Messa
 		b.incrementStat(message.ChannelID, consts.StatKeySpamCount)
 		b.handleSpamMessage(message, b.checkAdminRights(message.ChannelID, b.api.Self.ID), processed, isEdit)
 	}
+	return processed, nil
 }
 
 func (b *Bot) downloadImage(url string) ([]byte, error) {
@@ -252,9 +317,29 @@ func (b *Bot) incrementUserMessageCount(message *structs.Message) {
 	}
 }
 
+func (b *Bot) watchMessageForEdits(ctx context.Context, message *structs.Message) {
+	key := b.editWatchKey(message.ChannelID, message.MessageID)
+	if err := b.redis.Set(ctx, key, message.UserID, consts.EditWatchTTL).Err(); err != nil {
+		b.logger.Error("Failed to set edit watch", "error", err, "channelID", message.ChannelID, "messageID", message.MessageID)
+	}
+}
+
+func (b *Bot) isMessageWatched(ctx context.Context, channelID int64, messageID int64) (bool, error) {
+	key := b.editWatchKey(channelID, messageID)
+	exists, err := b.redis.Exists(ctx, key).Result()
+	if err != nil {
+		return false, err
+	}
+	return exists > 0, nil
+}
+
+func (b *Bot) editWatchKey(channelID int64, messageID int64) string {
+	return fmt.Sprintf("%s%d:%d", consts.RedisEditWatchKeyPrefix, channelID, messageID)
+}
+
 func (b *Bot) sendCheckResultMessage(action string, message *structs.Message, processed structs.SpamCheckResult, deletedTime time.Time, channelID int64, isEdit bool) {
 	if isEdit {
-		action = "✏️ EDIT " + action
+		action = "✏️ Edit " + action
 	}
 	logMessage := fmt.Sprintf("%s:\nUser ID: %d\nChannel ID: %d\nSpam Score: %.2f / %.2f \nReasoning: \n%s", action, message.UserID, message.ChannelID, processed.SpamScore, b.config.Threshold, processed.Reasoning)
 	if !deletedTime.IsZero() {
@@ -282,6 +367,9 @@ func (b *Bot) forwardMessageToLogChannel(message *structs.Message, processed str
 		action := "✅ New user check"
 		if isSpam {
 			action = "🤡 Spam detected and deleted"
+		}
+		if isEdit && !isSpam {
+			action = "Check"
 		}
 
 		b.sendCheckResultMessage(action, message, processed, time.Time{}, logChannelID, isEdit)

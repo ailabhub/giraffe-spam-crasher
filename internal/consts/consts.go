@@ -8,6 +8,9 @@ const (
 	SpamCacheTTL = 24 * 31 * time.Hour
 
 	RedisSpamCacheKey = "spam:"
+	EditWatchTTL      = 12 * time.Hour
+
+	RedisEditWatchKeyPrefix = "watch:msg:"
 )
 
 type StatKey string
