@@ -643,18 +643,37 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 	if tgMessage.Caption != "" {
 		textParts = append(textParts, tgMessage.Caption)
 	}
+	if keyboardText := inlineKeyboardText(tgMessage.ReplyMarkup); keyboardText != "" {
+		textParts = append(textParts, keyboardText)
+	}
 
 	message.Text = strings.Join(textParts, "\n")
 
 	if len(tgMessage.Photo) > 0 {
 		// телега дает 3 размера фотографии в слайсе, от низкого до высокого качества, берем среднее
-		imageData, err := b.downloadTelegramImage(ctx, tgMessage.Photo[1])
+		imageData, err := b.downloadTelegramImage(ctx, tgMessage.Photo[len(tgMessage.Photo)/2])
 		if err != nil {
 			return structs.Message{}, fmt.Errorf("error downloading image: %w", err)
 		}
 
 		img := structs.Image(imageData)
 		message.Image = &img
+	}
+	if message.Image == nil {
+		if thumbnail := mediaThumbnail(tgMessage); thumbnail != nil {
+			imageData, err := b.downloadTelegramImage(ctx, *thumbnail)
+			if err != nil {
+				return structs.Message{}, fmt.Errorf("error downloading thumbnail: %w", err)
+			}
+
+			img := structs.Image(imageData)
+			message.Image = &img
+		}
+	}
+	if message.Text == "" && message.Image == nil && !message.HasQuote() {
+		if summary := mediaSummary(tgMessage); summary != "" {
+			message.Text = summary
+		}
 	}
 
 	return message, nil
@@ -674,4 +693,124 @@ func (b *Bot) downloadTelegramImage(_ context.Context, photo tgbotapi.PhotoSize)
 	}
 
 	return imageData, nil
+}
+
+func inlineKeyboardText(replyMarkup *tgbotapi.InlineKeyboardMarkup) string {
+	if replyMarkup == nil {
+		return ""
+	}
+
+	var buttons []string
+	for _, row := range replyMarkup.InlineKeyboard {
+		for _, button := range row {
+			label := strings.TrimSpace(button.Text)
+			target := ""
+
+			if button.URL != nil && *button.URL != "" {
+				target = *button.URL
+			} else if button.LoginURL != nil && button.LoginURL.URL != "" {
+				target = button.LoginURL.URL
+			} else if button.WebApp != nil && button.WebApp.URL != "" {
+				target = button.WebApp.URL
+			} else if button.CallbackData != nil && *button.CallbackData != "" {
+				target = "callback:" + *button.CallbackData
+			} else if button.SwitchInlineQuery != nil && *button.SwitchInlineQuery != "" {
+				target = "switch_inline_query:" + *button.SwitchInlineQuery
+			} else if button.SwitchInlineQueryCurrentChat != nil && *button.SwitchInlineQueryCurrentChat != "" {
+				target = "switch_inline_query_current_chat:" + *button.SwitchInlineQueryCurrentChat
+			}
+
+			if label == "" && target != "" {
+				label = target
+				target = ""
+			}
+			if label == "" && target == "" {
+				continue
+			}
+			if target != "" {
+				label = fmt.Sprintf("%s -> %s", label, target)
+			}
+			buttons = append(buttons, label)
+		}
+	}
+
+	if len(buttons) == 0 {
+		return ""
+	}
+
+	return "INLINE_BUTTONS:\n" + strings.Join(buttons, "\n")
+}
+
+func mediaThumbnail(message *tgbotapi.Message) *tgbotapi.PhotoSize {
+	if message == nil {
+		return nil
+	}
+	if message.Video != nil && message.Video.Thumbnail != nil {
+		return message.Video.Thumbnail
+	}
+	if message.Animation != nil && message.Animation.Thumbnail != nil {
+		return message.Animation.Thumbnail
+	}
+	if message.VideoNote != nil && message.VideoNote.Thumbnail != nil {
+		return message.VideoNote.Thumbnail
+	}
+	if message.Document != nil && message.Document.Thumbnail != nil {
+		return message.Document.Thumbnail
+	}
+	if message.Audio != nil && message.Audio.Thumbnail != nil {
+		return message.Audio.Thumbnail
+	}
+	if message.Sticker != nil && message.Sticker.Thumbnail != nil {
+		return message.Sticker.Thumbnail
+	}
+	return nil
+}
+
+func mediaSummary(message *tgbotapi.Message) string {
+	if message == nil {
+		return ""
+	}
+
+	switch {
+	case message.Video != nil:
+		return formatMediaSummary("video", message.Video.FileName, message.Video.MimeType, message.Video.Duration, message.Video.FileSize)
+	case message.Animation != nil:
+		return formatMediaSummary("animation", message.Animation.FileName, message.Animation.MimeType, message.Animation.Duration, message.Animation.FileSize)
+	case message.VideoNote != nil:
+		return formatMediaSummary("video_note", "", "", message.VideoNote.Duration, int64(message.VideoNote.FileSize))
+	case message.Audio != nil:
+		summary := formatMediaSummary("audio", message.Audio.FileName, message.Audio.MimeType, message.Audio.Duration, message.Audio.FileSize)
+		if message.Audio.Performer != "" || message.Audio.Title != "" {
+			return summary + fmt.Sprintf(" performer=%s title=%s", message.Audio.Performer, message.Audio.Title)
+		}
+		return summary
+	case message.Voice != nil:
+		return formatMediaSummary("voice", "", message.Voice.MimeType, message.Voice.Duration, message.Voice.FileSize)
+	case message.Document != nil:
+		return formatMediaSummary("document", message.Document.FileName, message.Document.MimeType, 0, message.Document.FileSize)
+	case message.Sticker != nil:
+		if message.Sticker.Emoji != "" {
+			return "MEDIA: sticker emoji=" + message.Sticker.Emoji
+		}
+		return "MEDIA: sticker"
+	default:
+		return ""
+	}
+}
+
+func formatMediaSummary(mediaType, fileName, mimeType string, duration int, fileSize int64) string {
+	parts := []string{"MEDIA:", mediaType}
+	if mimeType != "" {
+		parts = append(parts, "mime="+mimeType)
+	}
+	if duration > 0 {
+		parts = append(parts, fmt.Sprintf("duration=%ds", duration))
+	}
+	if fileName != "" {
+		parts = append(parts, "file="+fileName)
+	}
+	if fileSize > 0 {
+		parts = append(parts, fmt.Sprintf("size=%d", fileSize))
+	}
+	return strings.Join(parts, " ")
 }
