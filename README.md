@@ -37,7 +37,7 @@ Giraffe Spam Crusher is a sophisticated Telegram bot designed for efficient spam
    ANTHROPIC_API_KEY=your_anthropic_key
    HISTORY=/root/result.json
    PROMPT=/root/prompt.txt
-   MODEL=claude-3-5-sonnet-20240620
+   MODEL=claude-sonnet-4-5
    PROVIDER=anthropic
    SPAM_THRESHOLD=0.6
    NEW_USER_THRESHOLD=1
@@ -81,9 +81,9 @@ The bot can be configured using command-line flags or environment variables in t
   - Usage: `-prompt=/path/to/prompt.txt`
   - Docker: `PROMPT=/root/prompt.txt`
 
-- `MODEL`: AI model to use (e.g., gpt-4 for OpenAI, claude-3-5-sonnet-20240620 for Anthropic)
-  - Usage: `-model=claude-3-5-sonnet-20240620`
-  - Docker: `MODEL=claude-3-5-sonnet-20240620`
+- `MODEL`: AI model to use (e.g., gpt-4 for OpenAI, claude-sonnet-4-5 for Anthropic)
+  - Usage: `-model=claude-sonnet-4-5`
+  - Docker: `MODEL=claude-sonnet-4-5`
 
 - `PROVIDER`: API provider (openai or anthropic)
   - Usage: `-provider=anthropic`
