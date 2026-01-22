@@ -54,7 +54,6 @@ You must return only json object with spam_score and reasoning.
 Кто может разобрать старый шкаф и вынести? заплачу 6 тыщ
 Подскажите, кто может продать юсдт?
 ДПС Радар рабочий: ДПС Радар (2026).apk MEDIA: document file=ДПС Радар (2026).apk mime=application/vnd.android.package-archive
-
 ----end of examples------
 
 Here is the content from the Telegram channel:
