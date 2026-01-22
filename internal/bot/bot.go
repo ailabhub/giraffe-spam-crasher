@@ -670,9 +670,11 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 			message.Image = &img
 		}
 	}
-	if message.Text == "" && message.Image == nil && !message.HasQuote() {
-		if summary := mediaSummary(tgMessage); summary != "" {
+	if summary := mediaSummary(tgMessage); summary != "" {
+		if message.Text == "" && message.Image == nil && !message.HasQuote() {
 			message.Text = summary
+		} else {
+			message.Text = strings.TrimSpace(strings.Join([]string{message.Text, summary}, "\n"))
 		}
 	}
 
