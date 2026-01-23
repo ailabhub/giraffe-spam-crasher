@@ -677,6 +677,17 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 			message.Text = strings.TrimSpace(strings.Join([]string{message.Text, summary}, "\n"))
 		}
 	}
+	if tgMessage.ReplyToMessage != nil {
+		if replySummary := mediaSummary(tgMessage.ReplyToMessage); replySummary != "" {
+			replySummary = strings.TrimSpace(strings.TrimPrefix(replySummary, "MEDIA:"))
+			replySummary = "REPLY_MEDIA: " + replySummary
+			if message.Text == "" {
+				message.Text = replySummary
+			} else {
+				message.Text = strings.TrimSpace(strings.Join([]string{message.Text, replySummary}, "\n"))
+			}
+		}
+	}
 
 	return message, nil
 }
