@@ -631,7 +631,7 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 	}
 
 	if tgMessage.Quote != nil {
-		message.Quote = tgMessage.Quote.Text
+		message.Quote = strings.TrimSpace(tgMessage.Quote.Text)
 	}
 
 	message.RawOriginal = tgMessage
@@ -645,6 +645,25 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 	}
 	if keyboardText := inlineKeyboardText(tgMessage.ReplyMarkup); keyboardText != "" {
 		textParts = append(textParts, keyboardText)
+	}
+	if message.Quote != "" {
+		textParts = append(textParts, "QUOTE: "+message.Quote)
+	}
+	if tgMessage.ReplyToMessage != nil {
+		var replyParts []string
+		if tgMessage.ReplyToMessage.Text != "" {
+			replyParts = append(replyParts, tgMessage.ReplyToMessage.Text)
+		}
+		if tgMessage.ReplyToMessage.Caption != "" {
+			replyParts = append(replyParts, tgMessage.ReplyToMessage.Caption)
+		}
+		if replyKeyboardText := inlineKeyboardText(tgMessage.ReplyToMessage.ReplyMarkup); replyKeyboardText != "" {
+			replyParts = append(replyParts, replyKeyboardText)
+		}
+		if len(replyParts) > 0 {
+			replyText := strings.Join(replyParts, "\n")
+			textParts = append(textParts, "REPLY_TEXT: "+replyText)
+		}
 	}
 
 	message.Text = strings.Join(textParts, "\n")
