@@ -646,6 +646,8 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 	if keyboardText := inlineKeyboardText(tgMessage.ReplyMarkup); keyboardText != "" {
 		textParts = append(textParts, keyboardText)
 	}
+	appendEntityLinks(&textParts, "LINKS", tgMessage.Entities)
+	appendEntityLinks(&textParts, "CAPTION_LINKS", tgMessage.CaptionEntities)
 	if message.Quote != "" {
 		textParts = append(textParts, "QUOTE: "+message.Quote)
 	}
@@ -664,6 +666,26 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 			replyText := strings.Join(replyParts, "\n")
 			textParts = append(textParts, "REPLY_TEXT: "+replyText)
 		}
+		appendEntityLinks(&textParts, "REPLY_LINKS", tgMessage.ReplyToMessage.Entities)
+		appendEntityLinks(&textParts, "REPLY_CAPTION_LINKS", tgMessage.ReplyToMessage.CaptionEntities)
+		if senderChat := chatLabel(tgMessage.ReplyToMessage.SenderChat); senderChat != "" {
+			textParts = append(textParts, "REPLY_SENDER_CHAT: "+senderChat)
+		}
+		if origin := originSummary(tgMessage.ReplyToMessage.ForwardOrigin); origin != "" {
+			textParts = append(textParts, "REPLY_FORWARD_ORIGIN: "+origin)
+		}
+	}
+	if senderChat := chatLabel(tgMessage.SenderChat); senderChat != "" {
+		textParts = append(textParts, "SENDER_CHAT: "+senderChat)
+	}
+	if origin := originSummary(tgMessage.ForwardOrigin); origin != "" {
+		textParts = append(textParts, "FORWARD_ORIGIN: "+origin)
+	}
+	if externalReply := externalReplySummary(tgMessage.ExternalReply); externalReply != "" {
+		textParts = append(textParts, "EXTERNAL_REPLY: "+externalReply)
+	}
+	if externalMedia := externalReplyMediaSummary(tgMessage.ExternalReply); externalMedia != "" {
+		textParts = append(textParts, "EXTERNAL_REPLY_MEDIA: "+externalMedia)
 	}
 
 	message.Text = strings.Join(textParts, "\n")
@@ -845,4 +867,135 @@ func formatMediaSummary(mediaType, fileName, mimeType string, duration int, file
 		parts = append(parts, fmt.Sprintf("size=%d", fileSize))
 	}
 	return strings.Join(parts, " ")
+}
+
+func appendEntityLinks(parts *[]string, label string, entities []tgbotapi.MessageEntity) {
+	if len(entities) == 0 {
+		return
+	}
+
+	var links []string
+	for _, entity := range entities {
+		if entity.Type == "text_link" && entity.URL != "" {
+			links = append(links, entity.URL)
+		}
+	}
+	if len(links) == 0 {
+		return
+	}
+
+	*parts = append(*parts, label+":\n"+strings.Join(links, "\n"))
+}
+
+func chatLabel(chat *tgbotapi.Chat) string {
+	if chat == nil {
+		return ""
+	}
+
+	name := strings.TrimSpace(chat.Title)
+	if name == "" {
+		name = strings.TrimSpace(strings.TrimSpace(chat.FirstName + " " + chat.LastName))
+	}
+
+	if chat.UserName != "" {
+		if name != "" {
+			return fmt.Sprintf("%s (@%s)", name, chat.UserName)
+		}
+		return "@" + chat.UserName
+	}
+	if name != "" {
+		return name
+	}
+	if chat.ID != 0 {
+		return fmt.Sprintf("chat_id=%d", chat.ID)
+	}
+	return ""
+}
+
+func originSummary(origin *tgbotapi.MessageOrigin) string {
+	if origin == nil || origin.Type == "" {
+		return ""
+	}
+
+	switch origin.Type {
+	case tgbotapi.MessageOriginUser:
+		if origin.SenderUser != nil {
+			if origin.SenderUser.UserName != "" {
+				return fmt.Sprintf("user @%s", origin.SenderUser.UserName)
+			}
+			return fmt.Sprintf("user_id=%d", origin.SenderUser.ID)
+		}
+	case tgbotapi.MessageOriginHiddenUser:
+		if origin.SenderUserName != "" {
+			return "hidden_user " + origin.SenderUserName
+		}
+	case tgbotapi.MessageOriginChat:
+		if label := chatLabel(origin.SenderChat); label != "" {
+			if origin.AuthorSignature != "" {
+				return fmt.Sprintf("chat %s signature=%s", label, origin.AuthorSignature)
+			}
+			return "chat " + label
+		}
+	case tgbotapi.MessageOriginChannel:
+		if label := chatLabel(origin.Chat); label != "" {
+			if origin.MessageID != 0 {
+				return fmt.Sprintf("channel %s message_id=%d", label, origin.MessageID)
+			}
+			return "channel " + label
+		}
+	}
+
+	return origin.Type
+}
+
+func externalReplySummary(reply *tgbotapi.ExternalReplyInfo) string {
+	if reply == nil {
+		return ""
+	}
+
+	var parts []string
+	origin := reply.Origin
+	if originPart := originSummary(&origin); originPart != "" {
+		parts = append(parts, "origin="+originPart)
+	}
+	if chatPart := chatLabel(reply.Chat); chatPart != "" {
+		parts = append(parts, "chat="+chatPart)
+	}
+	if reply.MessageID != 0 {
+		parts = append(parts, fmt.Sprintf("message_id=%d", reply.MessageID))
+	}
+
+	return strings.Join(parts, " ")
+}
+
+func externalReplyMediaSummary(reply *tgbotapi.ExternalReplyInfo) string {
+	if reply == nil {
+		return ""
+	}
+
+	switch {
+	case reply.Video != nil:
+		return strings.TrimPrefix(formatMediaSummary("video", reply.Video.FileName, reply.Video.MimeType, reply.Video.Duration, reply.Video.FileSize), "MEDIA: ")
+	case reply.Animation != nil:
+		return strings.TrimPrefix(formatMediaSummary("animation", reply.Animation.FileName, reply.Animation.MimeType, reply.Animation.Duration, reply.Animation.FileSize), "MEDIA: ")
+	case reply.VideoNote != nil:
+		return strings.TrimPrefix(formatMediaSummary("video_note", "", "", reply.VideoNote.Duration, int64(reply.VideoNote.FileSize)), "MEDIA: ")
+	case reply.Audio != nil:
+		summary := formatMediaSummary("audio", reply.Audio.FileName, reply.Audio.MimeType, reply.Audio.Duration, reply.Audio.FileSize)
+		if reply.Audio.Performer != "" || reply.Audio.Title != "" {
+			summary += fmt.Sprintf(" performer=%s title=%s", reply.Audio.Performer, reply.Audio.Title)
+		}
+		return strings.TrimPrefix(summary, "MEDIA: ")
+	case reply.Voice != nil:
+		return strings.TrimPrefix(formatMediaSummary("voice", "", reply.Voice.MimeType, reply.Voice.Duration, reply.Voice.FileSize), "MEDIA: ")
+	case reply.Document != nil:
+		return strings.TrimPrefix(formatMediaSummary("document", reply.Document.FileName, reply.Document.MimeType, 0, reply.Document.FileSize), "MEDIA: ")
+	case reply.Sticker != nil:
+		if reply.Sticker.Emoji != "" {
+			return "sticker emoji=" + reply.Sticker.Emoji
+		}
+		return "sticker"
+	default:
+		return ""
+	}
 }
