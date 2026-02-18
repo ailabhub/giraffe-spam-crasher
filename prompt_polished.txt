@@ -19,10 +19,12 @@ Use of urgent language, pressure tactics, or sensational promises.
 Promises of unrealistic rewards or gains.
 Requests for personal information or financial details.
 Contextually irrelevant messages.
+Presence of a .apk download link or an Android package document (mime=application/vnd.android.package-archive).
 Key Rules:
 
 A single link in a message is less likely to be spam.
 Mentions of the user Samat or "Самат" (the admin's name) suggest the message is less likely to be spam.
+Any .apk link or Android package document is spam, even if the message contains only one link.
 Reasoning:
 
 Provide concise but meaningful reasoning for the spam score you assign.

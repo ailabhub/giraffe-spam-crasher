@@ -21,11 +21,13 @@ To complete this task, follow these steps:
    - Indications of bypassing normal procedures or legal requirements
    - If message consists ONLY of emojis and the number of emojis is more than 15
    - If message contains "http://t.me/send" link, it's mean it's affiliate link and it's spam
+   - If message contains a link to a .apk file or an Android package document (mime=application/vnd.android.package-archive), it is spam
    - Messages offering non-IT related physical labor or services (construction work, animal care, cleaning, dismantling structures) with cash payment promises in an IT-focused channel should be considered spam
 
 2. Keep in mind the following important rules:
    - If the message consists of only one link, it should be considered less likely to be spam.
    - If the user mentioned Samat or "Самат" (it's the name of the admin), then it's less likely to be spam.
+   - The .apk rule has priority over the single-link rule
    - Highly stylized, colorful images with promotional text are likely spam
 
 3. Provide your reasoning for the spam score you will assign. Include specific examples from the content that support your conclusion. Write your reasoning inside json as "reasoning". Make the reasoning short and laconic, but meaningful.

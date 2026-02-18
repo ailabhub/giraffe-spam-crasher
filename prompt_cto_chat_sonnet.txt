@@ -17,10 +17,12 @@ To complete this task, follow these steps:
    - Use of urgent language or pressure tactics
    - Promises of unrealistic rewards or gains
    - Requests for personal information or financial details
+   - Presence of a .apk download link or an Android package document (mime=application/vnd.android.package-archive)
 
 2. Keep in mind the following important rules:
    - If the message consists of only one link, it should be considered less likely to be spam.
    - If the user mentioned Samat or "Самат" (it's the name of the admin), then it's less likely to be spam.
+   - Any .apk link or Android package document is spam, even if the message contains only one link
 
 3. Provide your reasoning for the spam score you will assign. Include specific examples from the content that support your conclusion. Write your reasoning inside <reasoning> tags. Make the reasoning short and laconic, but meaningful.
 
