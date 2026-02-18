@@ -157,6 +157,8 @@ func (b *Bot) handleNewMessage(tgMessage *tgbotapi.Message, me *tgbotapi.User) {
 		if !isNewUser {
 			return
 		}
+		// Set edit watch early to avoid missing fast edits before spam check finishes.
+		b.watchMessageForEdits(ctx, &message)
 	}
 
 	if !privateMessage {
@@ -168,8 +170,8 @@ func (b *Bot) handleNewMessage(tgMessage *tgbotapi.Message, me *tgbotapi.User) {
 		return
 	}
 
-	if !privateMessage && isNewUser && processed.SpamScore <= b.config.Threshold {
-		b.watchMessageForEdits(ctx, &message)
+	if !privateMessage && isNewUser && processed.SpamScore > b.config.Threshold {
+		b.unwatchMessageForEdits(ctx, &message)
 	}
 }
 
@@ -215,7 +217,10 @@ func (b *Bot) handleEditedMessage(tgMessage *tgbotapi.Message, me *tgbotapi.User
 		return
 	}
 	if !watched {
-		return
+		if !b.isEligibleForEditCheck(ctx, &message) {
+			return
+		}
+		b.watchMessageForEdits(ctx, &message)
 	}
 
 	_, err = b.processTelegramMessage(ctx, &message, false, true, false)
@@ -324,6 +329,13 @@ func (b *Bot) watchMessageForEdits(ctx context.Context, message *structs.Message
 	}
 }
 
+func (b *Bot) unwatchMessageForEdits(ctx context.Context, message *structs.Message) {
+	key := b.editWatchKey(message.ChannelID, message.MessageID)
+	if err := b.redis.Del(ctx, key).Err(); err != nil {
+		b.logger.Error("Failed to clear edit watch", "error", err, "channelID", message.ChannelID, "messageID", message.MessageID)
+	}
+}
+
 func (b *Bot) isMessageWatched(ctx context.Context, channelID int64, messageID int64) (bool, error) {
 	key := b.editWatchKey(channelID, messageID)
 	exists, err := b.redis.Exists(ctx, key).Result()
@@ -335,6 +347,11 @@ func (b *Bot) isMessageWatched(ctx context.Context, channelID int64, messageID i
 
 func (b *Bot) editWatchKey(channelID int64, messageID int64) string {
 	return fmt.Sprintf("%s%d:%d", consts.RedisEditWatchKeyPrefix, channelID, messageID)
+}
+
+func (b *Bot) isEligibleForEditCheck(ctx context.Context, message *structs.Message) bool {
+	// Keep edit checks aligned with the same "new user" rule used for new messages.
+	return b.isNewUser(ctx, message)
 }
 
 func (b *Bot) sendCheckResultMessage(action string, message *structs.Message, processed structs.SpamCheckResult, deletedTime time.Time, channelID int64, isEdit bool) {
