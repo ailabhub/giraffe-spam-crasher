@@ -37,7 +37,7 @@
    ANTHROPIC_API_KEY=ваш_ключ_anthropic
    HISTORY=/root/result.json
    PROMPT=/root/prompt.txt
-   MODEL=claude-sonnet-4-5
+   MODEL=claude-sonnet-4-6
    PROVIDER=anthropic
    SPAM_THRESHOLD=0.6
    NEW_USER_THRESHOLD=1

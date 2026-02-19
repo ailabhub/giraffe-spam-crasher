@@ -72,7 +72,7 @@ go run main.go -input <input_file.csv> -prompt <prompt_file.txt> -provider <prov
 
 6.  Using CSV file with quotes:   
    ```
-   go run main.go -input=quoted_training_good.csv -prompt=prompt.txt -model=claude-sonnet-4-5 -provider=anthropic -ratelimit=0.5
+   go run main.go -input=quoted_training_good.csv -prompt=prompt.txt -model=claude-sonnet-4-6 -provider=anthropic -ratelimit=0.5
    ```
 
    ```
