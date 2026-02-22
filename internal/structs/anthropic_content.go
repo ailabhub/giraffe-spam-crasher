@@ -19,9 +19,20 @@ type AnthropicMessage struct {
 }
 
 type AnthropicRequest struct {
-	Model     string             `json:"model"`
-	Messages  []AnthropicMessage `json:"messages"`
-	MaxTokens int                `json:"max_tokens"`
+	Model        string                 `json:"model"`
+	Messages     []AnthropicMessage     `json:"messages"`
+	MaxTokens    int                    `json:"max_tokens"`
+	Temperature  float64                `json:"temperature"`
+	OutputConfig *AnthropicOutputConfig `json:"output_config,omitempty"`
+}
+
+type AnthropicOutputConfig struct {
+	Format AnthropicOutputFormat `json:"format"`
+}
+
+type AnthropicOutputFormat struct {
+	Type   string         `json:"type"`
+	Schema map[string]any `json:"schema"`
 }
 
 type AnthropicResponse struct {

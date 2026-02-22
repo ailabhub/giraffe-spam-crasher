@@ -49,6 +49,9 @@ func (s *SpamProcessor) CheckForSpam(ctx context.Context, message *structs.Messa
 		func() error {
 			spamScore, err = s.getSpamScoreForMessage(ctx, message)
 			if err != nil {
+				if errors.Is(err, ErrInvalidClassificationFormat) {
+					return retry.Unrecoverable(fmt.Errorf("s.SpamScoring.GetSpamScoreForMessage: %w", err))
+				}
 				return fmt.Errorf("s.SpamScoring.GetSpamScoreForMessage: %w", err)
 			}
 

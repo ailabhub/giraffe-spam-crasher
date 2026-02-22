@@ -126,9 +126,10 @@ type AnthropicMessage struct {
 }
 
 type AnthropicRequest struct {
-	Model     string             `json:"model"`
-	Messages  []AnthropicMessage `json:"messages"`
-	MaxTokens int                `json:"max_tokens"`
+	Model       string             `json:"model"`
+	Messages    []AnthropicMessage `json:"messages"`
+	MaxTokens   int                `json:"max_tokens"`
+	Temperature float64            `json:"temperature"`
 }
 
 type AnthropicResponse struct {
@@ -148,7 +149,8 @@ func (p *AnthropicProvider) ProcessMessage(ctx context.Context, message string) 
 		Messages: []AnthropicMessage{
 			{Role: "user", Content: message},
 		},
-		MaxTokens: 1000,
+		MaxTokens:   1000,
+		Temperature: 0,
 	})
 	if err != nil {
 		return "", fmt.Errorf("error marshaling request: %w", err)
