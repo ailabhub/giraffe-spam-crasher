@@ -12,7 +12,8 @@ services:
       - ./logs:/app/logs
       - ./:/root
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     networks:
       - app-network
     command: [
@@ -35,6 +36,12 @@ services:
       - ./redis_data:/data
       - ./redis.conf:/usr/local/etc/redis/redis.conf
     command: redis-server /usr/local/etc/redis/redis.conf --loglevel warning --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 2s
     restart: unless-stopped
     networks:
       - app-network

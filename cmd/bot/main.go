@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/ailabhub/giraffe-spam-crasher/internal/ai"
 	"github.com/ailabhub/giraffe-spam-crasher/internal/bot"
@@ -78,8 +79,7 @@ func main() { //nolint:gocyclo,gocognit
 
 	rdb := redis.NewClient(redisOptions)
 
-	_, err = rdb.Ping(ctx).Result()
-	if err != nil {
+	if err := waitForRedis(ctx, rdb, logger); err != nil {
 		slog.Error("Failed to connect to Redis", "error", err)
 		os.Exit(1)
 	}
@@ -271,4 +271,35 @@ func (l *logChannelsFlag) Set(value string) error {
 		(*l)[workingChatID] = logChannelID
 	}
 	return nil
+}
+
+func waitForRedis(ctx context.Context, rdb *redis.Client, logger *slog.Logger) error {
+	const (
+		maxWait      = 90 * time.Second
+		retryDelay   = 2 * time.Second
+		logEveryStep = true
+	)
+
+	deadline := time.Now().Add(maxWait)
+	attempt := 1
+
+	for {
+		if _, err := rdb.Ping(ctx).Result(); err == nil {
+			return nil
+		} else {
+			if time.Now().After(deadline) {
+				return fmt.Errorf("redis did not become ready within %s: %w", maxWait, err)
+			}
+			if logEveryStep {
+				logger.Warn("Redis not ready yet, waiting to retry", "attempt", attempt, "retry_in", retryDelay, "error", err)
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("waiting for Redis canceled: %w", ctx.Err())
+		case <-time.After(retryDelay):
+			attempt++
+		}
+	}
 }
