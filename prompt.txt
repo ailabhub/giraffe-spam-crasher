@@ -23,11 +23,13 @@ To complete this task, follow these steps:
    - If message contains "http://t.me/send" link, it's mean it's affiliate link and it's spam
    - If message contains a link to a .apk file or an Android package document (mime=application/vnd.android.package-archive), it is spam
    - Messages offering non-IT related physical labor or services (construction work, animal care, cleaning, dismantling structures) with cash payment promises in an IT-focused channel should be considered spam
+   - Messages asking to buy, sell, or exchange crypto such as USDT/USDT TRC20, especially with cash/bank transfer terms like "нал", "наличка", "перевод", in a non-crypto or IT-focused channel should be considered spam
 
 2. Keep in mind the following important rules:
    - If the message consists of only one link, it should be considered less likely to be spam.
    - If the user mentioned Samat or "Самат" (it's the name of the admin), then it's less likely to be spam.
    - The .apk rule has priority over the single-link rule
+   - Crypto buy/sell/exchange requests should still be scored as spam even if the text is short, neutral, and contains no links
    - Highly stylized, colorful images with promotional text are likely spam
 
 3. Provide your reasoning for the spam score you will assign. Include specific examples from the content that support your conclusion. Write your reasoning inside json as "reasoning". Make the reasoning short and laconic, but meaningful.
@@ -55,6 +57,7 @@ You must return only json object with spam_score and reasoning.
 Нужно разобрать старую баню. Кто может отозвитесь, сами не справимся. Дам по 7 тыс, кто сделает быстро
 Кто может разобрать старый шкаф и вынести? заплачу 6 тыщ
 Подскажите, кто может продать юсдт?
+Хочу купить usdt trc20 в ближайшее время. Оплата: нал/перевод.
 ДПС Радар рабочий: ДПС Радар (2026).apk MEDIA: document file=ДПС Радар (2026).apk mime=application/vnd.android.package-archive
 VPN для Telegram ⚡ Бесплатный и Быстрый VPN для Telegram Работает даже при блокировках от РКН! Спасибо! MEDIA: photo
 ----end of examples------
