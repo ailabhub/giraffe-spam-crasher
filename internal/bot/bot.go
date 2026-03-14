@@ -704,6 +704,9 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 	if externalMedia := externalReplyMediaSummary(tgMessage.ExternalReply); externalMedia != "" {
 		textParts = append(textParts, "EXTERNAL_REPLY_MEDIA: "+externalMedia)
 	}
+	if externalURL := externalReplyPreviewURL(tgMessage.ExternalReply); externalURL != "" {
+		textParts = append(textParts, "EXTERNAL_REPLY_LINK_PREVIEW_URL: "+externalURL)
+	}
 
 	message.Text = strings.Join(textParts, "\n")
 
@@ -1015,4 +1018,11 @@ func externalReplyMediaSummary(reply *tgbotapi.ExternalReplyInfo) string {
 	default:
 		return ""
 	}
+}
+
+func externalReplyPreviewURL(reply *tgbotapi.ExternalReplyInfo) string {
+	if reply == nil || reply.LinkPreviewOptions == nil {
+		return ""
+	}
+	return strings.TrimSpace(reply.LinkPreviewOptions.URL)
 }

@@ -21,12 +21,14 @@ Requests for personal information or financial details.
 Contextually irrelevant messages.
 Presence of a .apk download link or an Android package document (mime=application/vnd.android.package-archive).
 Requests to buy, sell, or exchange crypto such as USDT/USDT TRC20, especially with cash/bank transfer wording like "нал", "наличка", "перевод", in a non-crypto or IT-focused channel.
+Short positive reactions or testimonials such as "спасибо", "помогло", "лучшее", "thanks", "worked" that reply to or forward an external VPN/proxy/bypass channel post.
 Key Rules:
 
 A single link in a message is less likely to be spam.
 Mentions of the user Samat or "Самат" (the admin's name) suggest the message is less likely to be spam.
 Any .apk link or Android package document is spam, even if the message contains only one link.
 Crypto buy/sell/exchange requests are spam even if the text is short, neutral, and contains no links.
+For EXTERNAL_REPLY or forwarded messages linked to VPN/proxy/bypass channels, short testimonial-style replies are spam even without links or overt promotion in the user's own text.
 Reasoning:
 
 Provide concise but meaningful reasoning for the spam score you assign.
