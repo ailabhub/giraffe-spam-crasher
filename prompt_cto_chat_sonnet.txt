@@ -20,6 +20,8 @@ To complete this task, follow these steps:
    - Presence of a .apk download link or an Android package document (mime=application/vnd.android.package-archive)
    - Requests to buy, sell, or exchange crypto such as USDT/USDT TRC20, especially with cash/bank transfer wording like "нал", "наличка", "перевод", in a non-crypto or IT-focused channel
    - Short positive reactions or testimonials such as "спасибо", "помогло", "лучшее", "thanks", "worked" that reply to or forward an external VPN/proxy/bypass channel post
+   - Messages whose main content is a Telegram @username, bot handle, or channel handle with little or no meaningful context
+   - Messages that only contain a bot/channel handle plus a number, emoji, or very short filler text
 
 2. Keep in mind the following important rules:
    - If the message consists of only one link, it should be considered less likely to be spam.
@@ -27,6 +29,8 @@ To complete this task, follow these steps:
    - Any .apk link or Android package document is spam, even if the message contains only one link
    - Crypto buy/sell/exchange requests are spam even if the text is short, neutral, and contains no links
    - For EXTERNAL_REPLY or forwarded messages linked to VPN/proxy/bypass channels, short testimonial-style replies are spam even without links or overt promotion in the user's own text
+   - A bare Telegram handle such as @examplebot or @channelname, especially with no real discussion context, is likely spam
+   - Bot/channel mentions are not spam only when they are clearly part of a genuine question, explanation, or technical discussion
 
 3. Provide your reasoning for the spam score you will assign. Include specific examples from the content that support your conclusion. Write your reasoning inside <reasoning> tags. Make the reasoning short and laconic, but meaningful.
 
