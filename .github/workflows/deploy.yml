@@ -37,6 +37,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     environment: production
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@v4      # чтобы в раннере был prompt.txt и compose-файл
 
@@ -60,9 +63,10 @@ jobs:
 
       - name: Pull & restart stack
         run: |
-          ssh ${{ secrets.DEPLOY_HOST }} '
+          ssh ${{ secrets.DEPLOY_HOST }} "
             set -e
             cd /srv/giraffe
+            echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u '${{ github.repository_owner }}' --password-stdin
             docker compose --env-file .env --env-file deploy.env pull
             docker compose --env-file .env --env-file deploy.env up -d --remove-orphans
-          '
+          "

@@ -78,15 +78,16 @@ jobs:
 
       - name: Deploy to production
         run: |
-          ssh ${{ secrets.DEPLOY_HOST }} '
+          ssh ${{ secrets.DEPLOY_HOST }} "
             set -e
             cd /srv/giraffe
             echo "Deploying branch: ${{ github.event.inputs.branch }}"
             echo "Image tag: ${{ steps.image.outputs.tag }}"
+            echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u '${{ github.repository_owner }}' --password-stdin
             docker compose --env-file .env --env-file deploy.env pull
             docker compose --env-file .env --env-file deploy.env up -d --remove-orphans
             echo "Deployment completed successfully!"
-          '
+          "
       
       - name: Summary
         run: |
