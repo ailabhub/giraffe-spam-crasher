@@ -27,6 +27,7 @@ To complete this task, follow these steps:
    - Short positive reactions or testimonials such as "спасибо", "помогло", "лучшее", "thanks", "worked" that reply to or forward an external VPN/proxy/bypass channel post should be considered spam
    - Messages whose main content is a Telegram @username, bot handle, or channel handle with little or no meaningful context should be considered spam
    - Messages that only contain a bot/channel handle plus a number, emoji, or very short filler text should be considered suspicious and likely spam
+   - Any mention of "SentX AI" is spam, regardless of context
 
 2. Keep in mind the following important rules:
    - If the message consists of only one link, it should be considered less likely to be spam.
@@ -71,6 +72,7 @@ VPN для Telegram ⚡ Бесплатный и Быстрый VPN для Telegr
 @infoeasabot 3
 @somevpn_bot
 Пишите @example_bot
+SentX AI
 ----end of examples------
 
 Here is the content from the Telegram channel:
