@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	tgbotapi "github.com/OvyFlash/telegram-bot-api/v6"
+	tgbotapi "github.com/OvyFlash/telegram-bot-api"
 	"github.com/ailabhub/giraffe-spam-crasher/internal/consts"
 	"github.com/ailabhub/giraffe-spam-crasher/internal/structs"
 	"github.com/redis/go-redis/v9"
@@ -393,13 +393,13 @@ func (b *Bot) forwardMessageToLogChannel(message *structs.Message, processed str
 	}
 }
 
-func (b *Bot) handleSpamMessage(message *structs.Message, adminRights AdminRights, processed structs.SpamCheckResult, isEdit bool) {
+func (b *Bot) handleSpamMessage(message *structs.Message, adminRights AdminRights, processed structs.SpamCheckResult, isEdit bool) { //nolint:gocyclo // Spam handling coordinates several independent Telegram actions.
 	action := "👻 Spam detected and logged"
 
 	// TODO: count by user, not by message
 	userSpamMessageCount := 0
 	if processed.FromCache {
-		userSpamMessageCount += 1
+		userSpamMessageCount++
 	}
 	// отправляем в лог канал только если сообщение не из кеша
 	if !processed.FromCache {
@@ -632,7 +632,7 @@ func (b *Bot) sendDailyStats() {
 	}
 }
 
-func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.Message) (structs.Message, error) {
+func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.Message) (structs.Message, error) { //nolint:gocyclo // Telegram messages contain many independent optional fields.
 	if tgMessage == nil {
 		return structs.Message{}, errors.New("nil telegram message")
 	}
@@ -644,7 +644,7 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 		UserID:      tgMessage.From.ID,
 		UserName:    tgMessage.From.FirstName + " (@" + tgMessage.From.UserName + ")",
 		ReceivedAt:  time.Now().UTC(),
-		MessageTime: time.Unix(int64(tgMessage.Date), 0).UTC(),
+		MessageTime: time.Unix(tgMessage.Date, 0).UTC(),
 	}
 
 	if tgMessage.Quote != nil {
@@ -660,6 +660,7 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 	if tgMessage.Caption != "" {
 		textParts = append(textParts, tgMessage.Caption)
 	}
+	textParts = append(textParts, structuredMessageText(tgMessage)...)
 	if keyboardText := inlineKeyboardText(tgMessage.ReplyMarkup); keyboardText != "" {
 		textParts = append(textParts, keyboardText)
 	}
@@ -676,6 +677,7 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 		if tgMessage.ReplyToMessage.Caption != "" {
 			replyParts = append(replyParts, tgMessage.ReplyToMessage.Caption)
 		}
+		replyParts = append(replyParts, structuredMessageText(tgMessage.ReplyToMessage)...)
 		if replyKeyboardText := inlineKeyboardText(tgMessage.ReplyToMessage.ReplyMarkup); replyKeyboardText != "" {
 			replyParts = append(replyParts, replyKeyboardText)
 		}
@@ -707,6 +709,9 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 	if externalURL := externalReplyPreviewURL(tgMessage.ExternalReply); externalURL != "" {
 		textParts = append(textParts, "EXTERNAL_REPLY_LINK_PREVIEW_URL: "+externalURL)
 	}
+	if externalChecklist := externalReplyChecklistSummary(tgMessage.ExternalReply); externalChecklist != "" {
+		textParts = append(textParts, "EXTERNAL_REPLY_"+externalChecklist)
+	}
 
 	message.Text = strings.Join(textParts, "\n")
 
@@ -725,6 +730,17 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 			imageData, err := b.downloadTelegramImage(ctx, *thumbnail)
 			if err != nil {
 				return structs.Message{}, fmt.Errorf("error downloading thumbnail: %w", err)
+			}
+
+			img := structs.Image(imageData)
+			message.Image = &img
+		}
+	}
+	if message.Image == nil {
+		if thumbnail := richMessageThumbnail(tgMessage.RichMessage); thumbnail != nil {
+			imageData, err := b.downloadTelegramImage(ctx, *thumbnail)
+			if err != nil {
+				return structs.Message{}, fmt.Errorf("error downloading rich message image: %w", err)
 			}
 
 			img := structs.Image(imageData)
@@ -778,21 +794,7 @@ func inlineKeyboardText(replyMarkup *tgbotapi.InlineKeyboardMarkup) string {
 	for _, row := range replyMarkup.InlineKeyboard {
 		for _, button := range row {
 			label := strings.TrimSpace(button.Text)
-			target := ""
-
-			if button.URL != nil && *button.URL != "" {
-				target = *button.URL
-			} else if button.LoginURL != nil && button.LoginURL.URL != "" {
-				target = button.LoginURL.URL
-			} else if button.WebApp != nil && button.WebApp.URL != "" {
-				target = button.WebApp.URL
-			} else if button.CallbackData != nil && *button.CallbackData != "" {
-				target = "callback:" + *button.CallbackData
-			} else if button.SwitchInlineQuery != nil && *button.SwitchInlineQuery != "" {
-				target = "switch_inline_query:" + *button.SwitchInlineQuery
-			} else if button.SwitchInlineQueryCurrentChat != nil && *button.SwitchInlineQueryCurrentChat != "" {
-				target = "switch_inline_query_current_chat:" + *button.SwitchInlineQueryCurrentChat
-			}
+			target := inlineKeyboardButtonTarget(button)
 
 			if label == "" && target != "" {
 				label = target
@@ -813,6 +815,25 @@ func inlineKeyboardText(replyMarkup *tgbotapi.InlineKeyboardMarkup) string {
 	}
 
 	return "INLINE_BUTTONS:\n" + strings.Join(buttons, "\n")
+}
+
+func inlineKeyboardButtonTarget(button tgbotapi.InlineKeyboardButton) string {
+	switch {
+	case button.URL != nil && *button.URL != "":
+		return *button.URL
+	case button.LoginURL != nil && button.LoginURL.URL != "":
+		return button.LoginURL.URL
+	case button.WebApp != nil && button.WebApp.URL != "":
+		return button.WebApp.URL
+	case button.CallbackData != nil && *button.CallbackData != "":
+		return "callback:" + *button.CallbackData
+	case button.SwitchInlineQuery != nil && *button.SwitchInlineQuery != "":
+		return "switch_inline_query:" + *button.SwitchInlineQuery
+	case button.SwitchInlineQueryCurrentChat != nil && *button.SwitchInlineQueryCurrentChat != "":
+		return "switch_inline_query_current_chat:" + *button.SwitchInlineQueryCurrentChat
+	default:
+		return ""
+	}
 }
 
 func mediaThumbnail(message *tgbotapi.Message) *tgbotapi.PhotoSize {

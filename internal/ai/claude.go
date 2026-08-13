@@ -43,6 +43,8 @@ func NewAnthropicProvider(apiKey, model string, rateLimit float64, prompt string
 }
 
 func (p *AnthropicProvider) ProcessMessage(ctx context.Context, message *structs.Message) (string, error) {
+	const jsonSchemaTypeKey = "type"
+
 	err := p.rateLimiter.Wait(ctx)
 	if err != nil {
 		return "", fmt.Errorf("rate limit error: %w", err)
@@ -62,15 +64,15 @@ func (p *AnthropicProvider) ProcessMessage(ctx context.Context, message *structs
 			Format: structs.AnthropicOutputFormat{
 				Type: "json_schema",
 				Schema: map[string]any{
-					"type": "object",
+					jsonSchemaTypeKey: "object",
 					"properties": map[string]any{
 						"spam_score": map[string]any{
-							"type":    "number",
-							"minimum": 0,
-							"maximum": 1,
+							jsonSchemaTypeKey: "number",
+							"minimum":         0,
+							"maximum":         1,
 						},
 						"reasoning": map[string]any{
-							"type": "string",
+							jsonSchemaTypeKey: "string",
 						},
 					},
 					"required":             []string{"spam_score", "reasoning"},

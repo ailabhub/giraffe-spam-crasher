@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"time"
 
-	tgbotapi "github.com/OvyFlash/telegram-bot-api/v6"
+	tgbotapi "github.com/OvyFlash/telegram-bot-api"
 )
 
 type Message struct {

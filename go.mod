@@ -5,7 +5,7 @@ go 1.23
 toolchain go1.23.2
 
 require (
-	github.com/OvyFlash/telegram-bot-api/v6 v6.0.0-20241030124621-1376e01c644a
+	github.com/OvyFlash/telegram-bot-api v0.0.0-20260715235732-aca8bf3898bb
 	github.com/avast/retry-go v2.7.0+incompatible
 	github.com/disintegration/imaging v1.6.2
 	github.com/google/generative-ai-go v0.17.0

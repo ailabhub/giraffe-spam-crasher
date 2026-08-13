@@ -239,7 +239,7 @@ func (i *intSliceFlag) Set(value string) error {
 type logChannelsFlag map[int64]int64
 
 func (l *logChannelsFlag) String() string {
-	pairs := make([]string, len(*l))
+	pairs := make([]string, 0, len(*l))
 	for workingChatID, logChannelID := range *l {
 		pairs = append(pairs, fmt.Sprintf("%d:%d", workingChatID, logChannelID))
 	}
@@ -284,15 +284,15 @@ func waitForRedis(ctx context.Context, rdb *redis.Client, logger *slog.Logger) e
 	attempt := 1
 
 	for {
-		if _, err := rdb.Ping(ctx).Result(); err == nil {
+		_, err := rdb.Ping(ctx).Result()
+		if err == nil {
 			return nil
-		} else {
-			if time.Now().After(deadline) {
-				return fmt.Errorf("redis did not become ready within %s: %w", maxWait, err)
-			}
-			if logEveryStep {
-				logger.Warn("Redis not ready yet, waiting to retry", "attempt", attempt, "retry_in", retryDelay, "error", err)
-			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("redis did not become ready within %s: %w", maxWait, err)
+		}
+		if logEveryStep {
+			logger.Warn("Redis not ready yet, waiting to retry", "attempt", attempt, "retry_in", retryDelay, "error", err)
 		}
 
 		select {
