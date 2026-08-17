@@ -37,6 +37,7 @@ To complete this task, follow these steps:
    - For EXTERNAL_REPLY or forwarded messages linked to VPN/proxy/bypass channels, short testimonial-style replies are spam even without links or overt promotion in the user's own text
    - A bare Telegram handle such as @examplebot or @channelname, especially with no real discussion context, is likely spam
    - Bot/channel mentions are not spam only when they are clearly part of a genuine question, explanation, or technical discussion
+   - "/ctodailydose" is a legitimate command and is not spam
    - Highly stylized, colorful images with promotional text are likely spam
 
 3. Provide your reasoning for the spam score you will assign. Include specific examples from the content that support your conclusion. Write your reasoning inside json as "reasoning". Make the reasoning short and laconic, but meaningful.
