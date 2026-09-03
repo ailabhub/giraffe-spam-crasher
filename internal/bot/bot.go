@@ -642,7 +642,7 @@ func (b *Bot) fromTGToInternalMessage(ctx context.Context, tgMessage *tgbotapi.M
 		ChannelName: tgMessage.Chat.Title,
 		MessageID:   int64(tgMessage.MessageID),
 		UserID:      tgMessage.From.ID,
-		UserName:    tgMessage.From.FirstName + " (@" + tgMessage.From.UserName + ")",
+		UserName:    formatUserName(tgMessage.From),
 		ReceivedAt:  time.Now().UTC(),
 		MessageTime: time.Unix(tgMessage.Date, 0).UTC(),
 	}
@@ -951,6 +951,22 @@ func chatLabel(chat *tgbotapi.Chat) string {
 		return fmt.Sprintf("chat_id=%d", chat.ID)
 	}
 	return ""
+}
+
+func formatUserName(user *tgbotapi.User) string {
+	if user == nil {
+		return ""
+	}
+
+	name := strings.TrimSpace(user.FirstName + " " + user.LastName)
+	if user.UserName == "" {
+		return name
+	}
+	if name == "" {
+		return "@" + user.UserName
+	}
+
+	return fmt.Sprintf("%s (@%s)", name, user.UserName)
 }
 
 func originSummary(origin *tgbotapi.MessageOrigin) string {

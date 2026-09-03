@@ -189,3 +189,33 @@ func TestRichMessageThumbnail(t *testing.T) {
 		t.Fatalf("expected medium photo, got %q", thumbnail.FileID)
 	}
 }
+
+func TestFormatUserName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		user *tgbotapi.User
+		want string
+	}{
+		{
+			name: "full name and username",
+			user: &tgbotapi.User{FirstName: "Laura", LastName: "Edwards", UserName: "laura"},
+			want: "Laura Edwards (@laura)",
+		},
+		{
+			name: "full name without username",
+			user: &tgbotapi.User{FirstName: "Laura", LastName: "Edwards"},
+			want: "Laura Edwards",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := formatUserName(tt.user); got != tt.want {
+				t.Errorf("formatUserName() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

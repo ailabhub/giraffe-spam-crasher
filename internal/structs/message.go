@@ -8,6 +8,8 @@ import (
 	tgbotapi "github.com/OvyFlash/telegram-bot-api"
 )
 
+const anthropicContentTypeText = "text"
+
 type Message struct {
 	// Text of the message
 	Text string
@@ -43,13 +45,19 @@ func (m *Message) IsEmpty() bool {
 func (m *Message) ToAnthropicMessage(prompt string) (AnthropicMessage, error) {
 	content := []AnthropicContent{
 		{
-			Type: "text",
+			Type: anthropicContentTypeText,
 			Text: prompt,
 		},
 	}
+	if m.UserName != "" {
+		content = append(content, AnthropicContent{
+			Type: anthropicContentTypeText,
+			Text: "SENDER_NAME: " + m.UserName,
+		})
+	}
 	if m.HasText() {
 		content = append(content, AnthropicContent{
-			Type: "text",
+			Type: anthropicContentTypeText,
 			Text: m.Text,
 		})
 	}
@@ -65,11 +73,12 @@ func (m *Message) ToAnthropicMessage(prompt string) (AnthropicMessage, error) {
 }
 
 func (m *Message) Hash() string {
-	var hash string
-	if m.HasText() {
-		sum256 := sha256.Sum256([]byte(m.Text))
-		hash = hex.EncodeToString(sum256[:])
+	if !m.HasText() && !m.HasImage() {
+		return ""
 	}
+
+	sum256 := sha256.Sum256([]byte(m.UserName + "\x00" + m.Text))
+	hash := hex.EncodeToString(sum256[:])
 
 	if m.HasImage() {
 		sum256 := sha256.Sum256(*m.Image)
