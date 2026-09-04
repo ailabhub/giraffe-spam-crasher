@@ -21,7 +21,7 @@ func TestToAnthropicMessageIncludesSenderName(t *testing.T) {
 	if got := anthropicMessage.Content[1].Text; got != "SENDER_NAME: promotional sender" {
 		t.Errorf("sender content = %q", got)
 	}
-	if got := anthropicMessage.Content[2].Text; got != "n8" {
+	if got := anthropicMessage.Content[2].Text; got != "MESSAGE_TEXT: n8" {
 		t.Errorf("message content = %q", got)
 	}
 }
