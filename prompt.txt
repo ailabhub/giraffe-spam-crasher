@@ -74,6 +74,7 @@ VPN для Telegram ⚡ Бесплатный и Быстрый VPN для Telegr
 @somevpn_bot
 Пишите @example_bot
 SentX AI
+regcloud
 ----end of examples------
 
 Here is the content from the Telegram channel:
