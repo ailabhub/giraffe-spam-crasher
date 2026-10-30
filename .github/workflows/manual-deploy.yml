@@ -25,6 +25,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.branch }}
+
+      - name: Test bot-only deployment
+        run: python3 -m unittest discover -s scripts -p 'test_deploy_bot.py' -v
       
       - name: Get commit SHA
         id: commit
@@ -67,6 +70,10 @@ jobs:
       - name: Trust server host key
         run: ssh-keyscan -H 5.9.39.84 >> ~/.ssh/known_hosts
 
+      - name: Check existing Redis before shipping
+        run: |
+          ssh ${{ secrets.DEPLOY_HOST }} 'cd /srv/giraffe && bash -s -- --check-redis' < scripts/deploy-bot.sh
+
       - name: Prepare deploy env
         run: echo "IMAGE_TAG=${{ steps.image.outputs.tag }}" > deploy.env
 
@@ -76,7 +83,7 @@ jobs:
             docker-compose.yml deploy.env prompt.txt \
             ${{ secrets.DEPLOY_HOST }}:/srv/giraffe/
 
-      - name: Deploy to production
+      - name: Deploy bot to production
         run: |
           ssh ${{ secrets.DEPLOY_HOST }} "
             set -e
@@ -84,10 +91,8 @@ jobs:
             echo "Deploying branch: ${{ github.event.inputs.branch }}"
             echo "Image tag: ${{ steps.image.outputs.tag }}"
             echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u '${{ github.repository_owner }}' --password-stdin
-            docker compose --env-file .env --env-file deploy.env pull
-            docker compose --env-file .env --env-file deploy.env up -d --remove-orphans
-            echo "Deployment completed successfully!"
-          "
+            bash -s
+          " < scripts/deploy-bot.sh
       
       - name: Summary
         run: |
