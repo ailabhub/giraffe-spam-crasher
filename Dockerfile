@@ -1,4 +1,6 @@
-FROM golang:1.23-alpine AS builder
+FROM golang:1.26.10-alpine3.24 AS builder
+
+ENV GOTOOLCHAIN=local
 
 WORKDIR /app
 
@@ -12,9 +14,11 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN go build -o bot ./cmd/bot
+RUN test "$(go env GOVERSION)" = go1.26.10 \
+    && go build -o bot ./cmd/bot \
+    && go version -m bot
 
-FROM alpine:latest
+FROM alpine:3.24.3
 RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=builder /app/bot .

@@ -10,6 +10,7 @@ on:
         default: 'main'
 
 env:
+  GOTOOLCHAIN: local
   COMPOSE_INTERACTIVE_NO_CLI: 1
 
 jobs:
@@ -29,6 +30,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+
+      - name: Verify Go toolchain
+        run: test "$(go env GOVERSION)" = go1.26.10
 
       - name: Run Go tests
         run: go test ./...

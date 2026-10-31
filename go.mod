@@ -1,8 +1,6 @@
 module github.com/ailabhub/giraffe-spam-crasher
 
-go 1.23
-
-toolchain go1.23.2
+go 1.26.10
 
 require (
 	github.com/OvyFlash/telegram-bot-api v0.0.0-20260715235732-aca8bf3898bb
