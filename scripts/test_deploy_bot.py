@@ -188,6 +188,9 @@ class DeployBotTests(unittest.TestCase):
         for filename in ("deploy.yml", "manual-deploy.yml"):
             with self.subTest(workflow=filename):
                 workflow = (ROOT / ".github/workflows" / filename).read_text()
+                self.assertIn("go-version-file: go.mod", workflow)
+                self.assertIn("run: go test ./...", workflow)
+                self.assertLess(workflow.index("run: go test ./..."), workflow.index("docker/build-push-action"))
                 self.assertIn("python3 -m unittest discover -s scripts -p 'test_deploy_bot.py' -v", workflow)
                 self.assertIn("bash -s -- --check-redis' < scripts/deploy-bot.sh", workflow)
                 self.assertEqual(workflow.count("< scripts/deploy-bot.sh"), 2)

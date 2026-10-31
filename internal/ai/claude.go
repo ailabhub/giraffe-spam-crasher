@@ -68,8 +68,7 @@ func (p *AnthropicProvider) ProcessMessage(ctx context.Context, message *structs
 					"properties": map[string]any{
 						"spam_score": map[string]any{
 							jsonSchemaTypeKey: "number",
-							"minimum":         0,
-							"maximum":         1,
+							"description":     "Spam score from 0 to 1 inclusive; validated locally.",
 						},
 						"reasoning": map[string]any{
 							jsonSchemaTypeKey: "string",

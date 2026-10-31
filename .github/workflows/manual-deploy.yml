@@ -26,6 +26,13 @@ jobs:
         with:
           ref: ${{ github.event.inputs.branch }}
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run Go tests
+        run: go test ./...
+
       - name: Test bot-only deployment
         run: python3 -m unittest discover -s scripts -p 'test_deploy_bot.py' -v
       
