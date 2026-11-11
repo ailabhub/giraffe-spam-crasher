@@ -23,6 +23,7 @@ To complete this task, follow these steps:
    - If message contains "http://t.me/send" link, it's mean it's affiliate link and it's spam
    - If message contains a link to a .apk file or an Android package document (mime=application/vnd.android.package-archive), it is spam
    - Messages offering non-IT related physical labor or services (construction work, animal care, cleaning, dismantling structures) with cash payment promises in an IT-focused channel should be considered spam
+   - Off-topic giveaway offers (e.g., "отдам бесплатно" for carpets, furniture, or household appliances) in an IT-focused channel are spam, even without links or requests for payment
    - Messages asking to buy, sell, or exchange crypto such as USDT/USDT TRC20, especially with cash/bank transfer terms like "нал", "наличка", "перевод", in a non-crypto or IT-focused channel should be considered spam
    - Short positive reactions or testimonials such as "спасибо", "помогло", "лучшее", "thanks", "worked" that reply to or forward an external VPN/proxy/bypass channel post should be considered spam
    - Messages whose main content is a Telegram @username, bot handle, or channel handle with little or no meaningful context should be considered spam
